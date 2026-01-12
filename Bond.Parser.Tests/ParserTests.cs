@@ -392,6 +392,58 @@ public class ParserTests
             .Which.Identifier.Should().Be("Active");
     }
 
+    [Fact]
+    public async Task StringDefault_CapitalizedTypeName_IsParsed()
+    {
+        var input = """
+            namespace Test
+            struct User { 0: required String name = "foo"; }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var field = (result.Ast!.Declarations[0] as StructDeclaration)!.Fields[0];
+        field.DefaultValue.Should().BeOfType<Default.String>()
+            .Which.Value.Should().Be("foo");
+    }
+
+    [Fact]
+    public async Task HexLiteral_IsParsed()
+    {
+        var input = """
+            namespace Test
+            enum Values {
+                HexPos = 0xFF,
+                HexNeg = -0xFF
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var enumDecl = result.Ast!.Declarations[0] as EnumDeclaration;
+        enumDecl!.Constants.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task OctalLiteral_IsParsed()
+    {
+        var input = """
+            namespace Test
+            enum Values {
+                OctPos = 0o123,
+                OctNeg = -0o123
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var enumDecl = result.Ast!.Declarations[0] as EnumDeclaration;
+        enumDecl!.Constants.Should().HaveCount(2);
+    }
+
     #endregion
 
     #region Generics
@@ -648,6 +700,61 @@ public class ParserTests
             .Which.Should().BeOfType<EventMethod>();
     }
 
+    [Fact]
+    public async Task ServiceWithStreamingMethods_IsParsed()
+    {
+        var input = """
+            namespace Test
+            struct Request { 0: required string id; }
+            struct Response { 0: required string result; }
+            service MyService {
+                stream Response ServerStreaming(Request);
+                Response ClientStreaming(stream Request);
+                stream Response DuplexStreaming(stream Request);
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var serviceDecl = result.Ast!.Declarations[2] as ServiceDeclaration;
+        serviceDecl!.Methods.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task StructNamedStream_IsParsed()
+    {
+        var input = """
+            namespace Test
+            struct stream { 0: required string id; }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var structDecl = result.Ast!.Declarations[0] as StructDeclaration;
+        structDecl!.Name.Should().Be("stream");
+    }
+
+    [Fact]
+    public async Task ServiceMethodWithStreamParameter_IsParsed()
+    {
+        var input = """
+            namespace Test
+            struct stream { 0: required string id; }
+            service MyService {
+                stream shouldBeUnary(stream);
+                stream stream shouldBeStreaming(stream stream);
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var serviceDecl = result.Ast!.Declarations[1] as ServiceDeclaration;
+        serviceDecl!.Methods.Should().HaveCount(2);
+    }
+
     #endregion
 
     #region Special Field Names
@@ -701,6 +808,22 @@ public class ParserTests
 
         result.Success.Should().BeTrue();
         result.Ast!.Imports.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ImportWithMixedSlashes_IsParsed()
+    {
+        var input = """
+            import "dir1/dir2\empty.bond"
+            namespace Test
+            struct User { 0: required string id; }
+        """;
+
+        var result = await Parse(input, MockImportResolver);
+
+        result.Success.Should().BeTrue();
+        result.Ast!.Imports.Should().ContainSingle()
+            .Which.FilePath.Should().Be(@"dir1/dir2\empty.bond");
     }
 
     #endregion

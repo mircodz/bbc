@@ -29,8 +29,8 @@ class Program
         Console.WriteLine("Bond Schema Compiler - Parses and validates Bond IDL files");
         Console.WriteLine();
         Console.WriteLine("Usage:");
-        Console.WriteLine("  bond-compiler parse <file.bond> [options]");
-        Console.WriteLine("  bond-compiler breaking <file.bond> --against <reference> [options]");
+        Console.WriteLine("  bcc parse <file.bond> [options]");
+        Console.WriteLine("  bcc breaking <file.bond> --against <reference> [options]");
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  parse       Parse and validate a Bond schema file");
@@ -44,9 +44,9 @@ class Program
         Console.WriteLine("  --error-format <format>    Output format: text, json (default: text)");
         Console.WriteLine();
         Console.WriteLine("Examples:");
-        Console.WriteLine("  bond-compiler parse schema.bond");
-        Console.WriteLine("  bond-compiler breaking schema.bond --against schema_v1.bond");
-        Console.WriteLine("  bond-compiler breaking schema.bond --against .git#branch=main --error-format=json");
+        Console.WriteLine("  bbc parse schema.bond");
+        Console.WriteLine("  bbc breaking schema.bond --against schema_v1.bond");
+        Console.WriteLine("  bbc breaking schema.bond --against .git#branch=main --error-format=json");
         Console.WriteLine();
         Console.WriteLine("Global Options:");
         Console.WriteLine("  -h, --help                 Show this help message");

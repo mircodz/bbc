@@ -13,6 +13,14 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- Tool configuration -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>bbc</ToolCommandName>
+    <PackageId>BBC.Compiler.CLI</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Mirco De Zorzi</Authors>
+    <Description>Bond IDL compiler and toolchain</Description>
   </PropertyGroup>
 
 </Project>

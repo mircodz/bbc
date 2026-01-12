@@ -72,7 +72,7 @@ public class SemanticAnalyzer
 
         foreach (var field in structDecl.Fields)
         {
-            ValidateField(field);
+            ValidateField(field, structDecl.Namespaces);
         }
     }
 
@@ -86,6 +86,25 @@ public class SemanticAnalyzer
     {
         CheckForDuplicates(serviceDecl.Methods.Select(m => m.Name),
             $"Service '{serviceDecl.Name}'", "method name");
+
+        if (serviceDecl.BaseType != null)
+        {
+            if (serviceDecl.BaseType is BondType.TypeParameter)
+                throw new InvalidOperationException(
+                    $"Service '{serviceDecl.Name}' cannot inherit from type parameter");
+
+            if (serviceDecl.BaseType.IsStruct())
+                throw new InvalidOperationException(
+                    $"Service '{serviceDecl.Name}' cannot inherit from struct");
+
+            if (serviceDecl.BaseType is BondType.UnresolvedUserType unresolved)
+            {
+                var baseDecl = _symbolTable.FindSymbol(unresolved.QualifiedName, serviceDecl.Namespaces);
+                if (baseDecl is StructDeclaration)
+                    throw new InvalidOperationException(
+                        $"Service '{serviceDecl.Name}' cannot inherit from struct '{string.Join(".", unresolved.QualifiedName)}'");
+            }
+        }
 
         foreach (var method in serviceDecl.Methods.OfType<EventMethod>())
         {
@@ -107,17 +126,51 @@ public class SemanticAnalyzer
         }
     }
 
-    private void ValidateField(Field field)
+    /// <summary>
+    /// Resolves type aliases to their underlying types
+    /// </summary>
+    private BondType ResolveAliases(BondType type, Namespace[] namespaces)
     {
-        if (!TypeValidator.ValidateDefaultValue(field.Type, field.DefaultValue))
-        {
+        if (type is not BondType.UnresolvedUserType unresolved)
+            return type;
+
+        var decl = _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
+
+        // Recursively resolve aliases
+        if (decl is AliasDeclaration alias)
+            return ResolveAliases(alias.AliasedType, namespaces);
+
+        return type;
+    }
+
+    private void ValidateField(Field field, Namespace[] namespaces)
+    {
+        var actualType = ResolveAliases(field.Type, namespaces);
+
+        if (!TypeValidator.ValidateDefaultValue(actualType, field.DefaultValue))
             throw new InvalidOperationException(
                 $"Field '{field.Name}' has invalid default value for type {field.Type}");
+
+        bool isEnumField = field.Type.IsEnum();
+        if (field.Type is BondType.UnresolvedUserType unresolvedEnum)
+        {
+            var decl = _symbolTable.FindSymbol(unresolvedEnum.QualifiedName, namespaces);
+            if (decl is EnumDeclaration)
+                isEnumField = true;
         }
 
-        if (field.Type.IsEnum() && field.DefaultValue == null)
+        if (isEnumField && field.DefaultValue == null && field.Modifier != FieldModifier.Required)
+            throw new InvalidOperationException(
+                $"Enum field '{field.Name}' must have a default value");
+
+        TypeValidator.ValidateStructField(field);
+
+        if (field.Type is BondType.UnresolvedUserType unresolved && field.DefaultValue is Default.Nothing)
         {
-            TypeValidator.ValidateEnumField(field);
+            var decl = _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
+            if (decl is StructDeclaration)
+                throw new InvalidOperationException(
+                    $"Struct field '{field.Name}' cannot have default value of 'nothing'");
         }
     }
 }

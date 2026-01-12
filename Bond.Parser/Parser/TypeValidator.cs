@@ -47,6 +47,10 @@ public static class TypeValidator
             (BondType.WString, Default.String) => true,
             (BondType.UserDefined { Declaration: EnumDeclaration }, Default.Enum) => true,
             (BondType.UnresolvedUserType, Default.Enum) => true,
+            (BondType.UnresolvedUserType, Default.String) => true,
+            (BondType.UnresolvedUserType, Default.Integer) => true,
+            (BondType.UnresolvedUserType, Default.Float) => true,
+            (BondType.UnresolvedUserType, Default.Bool) => true,
             (BondType.TypeParameter, _) => true,
             _ => false
         };

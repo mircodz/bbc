@@ -18,8 +18,14 @@ language
     : CPP | CSHARP | CS | JAVA
     ;
 
+identifier
+    : IDENTIFIER
+    | STREAM
+    | VALUE
+    ;
+
 qualifiedName
-    : IDENTIFIER (DOT IDENTIFIER)*
+    : identifier (DOT identifier)*
     ;
 
 declaration
@@ -31,15 +37,15 @@ declaration
     ;
 
 forward
-    : STRUCT IDENTIFIER typeParameters? SEMI
+    : STRUCT identifier typeParameters? SEMI
     ;
 
 alias
-    : USING IDENTIFIER typeParameters? EQUAL type SEMI
+    : USING identifier typeParameters? EQUAL type SEMI
     ;
 
 structDecl
-    : attributes? STRUCT IDENTIFIER typeParameters? (structView | structDef)
+    : attributes? STRUCT identifier typeParameters? (structView | structDef)
     ;
 
 structView
@@ -47,7 +53,7 @@ structView
     ;
 
 viewFieldList
-    : IDENTIFIER (semiOrComma IDENTIFIER)* semiOrComma?
+    : identifier (semiOrComma identifier)* semiOrComma?
     ;
 
 structDef
@@ -55,23 +61,23 @@ structDef
     ;
 
 enum
-    : attributes? ENUM IDENTIFIER LBRACE enumConstant (semiOrComma enumConstant)* semiOrComma? RBRACE SEMI?
+    : attributes? ENUM identifier LBRACE enumConstant (semiOrComma enumConstant)* semiOrComma? RBRACE SEMI?
     ;
 
 enumConstant
-    : IDENTIFIER (EQUAL INTEGER_LITERAL)?
+    : identifier (EQUAL INTEGER_LITERAL)?
     ;
 
 service
-    : attributes? SERVICE IDENTIFIER typeParameters? (COLON serviceType)? LBRACE method* RBRACE SEMI?
+    : attributes? SERVICE identifier typeParameters? (COLON serviceType)? LBRACE method* RBRACE SEMI?
     ;
 
 method
-    : attributes? (methodResultType IDENTIFIER LPAREN methodParameter? RPAREN | NOTHING IDENTIFIER LPAREN methodParameter? RPAREN) SEMI?
+    : attributes? (methodResultType identifier LPAREN methodParameter? RPAREN | NOTHING identifier LPAREN methodParameter? RPAREN) SEMI?
     ;
 
 methodParameter
-    : methodInputType IDENTIFIER?
+    : methodInputType identifier?
     ;
 
 methodResultType
@@ -99,8 +105,7 @@ field
     ;
 
 fieldIdentifier
-    : IDENTIFIER
-    | VALUE  // Allow 'value' as field name
+    : identifier
     ;
 
 fieldOrdinal
@@ -182,7 +187,7 @@ typeParameters
     ;
 
 typeParam
-    : IDENTIFIER constraint?
+    : identifier constraint?
     ;
 
 constraint
@@ -194,7 +199,7 @@ default_
     | FALSE
     | NOTHING
     | L? STRING_LITERAL
-    | IDENTIFIER
+    | identifier
     | FLOAT_LITERAL
     | INTEGER_LITERAL
     ;
@@ -299,7 +304,8 @@ IDENTIFIER
 // Literals
 INTEGER_LITERAL
     : [+-]? [0-9]+
-    | '0x' [0-9a-fA-F]+
+    | [+-]? '0x' [0-9a-fA-F]+
+    | [+-]? '0o' [0-7]+
     ;
 
 FLOAT_LITERAL
@@ -317,6 +323,7 @@ fragment ESC
     | '\\' [0-7] [0-7]? [0-7]?
     | '\\' 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
     | '\\' 'U' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+    | '\\' ~[\r\n]  // Allow any character except newlines after backslash
     ;
 
 // Comments
