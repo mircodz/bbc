@@ -81,7 +81,7 @@ public class ParserTests
         var input = """
             namespace Test
             struct User {
-                0: required string path = "C:\Users\test";
+                0: required string path = "C:\\Users\\test";
             }
         """;
 
