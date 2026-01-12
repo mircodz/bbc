@@ -31,7 +31,7 @@ clean: ## Clean build artifacts
 pack: clean build-release ## Pack the CLI tool as a NuGet package
 	dotnet pack Bond.Compiler.CLI/Bond.Compiler.CLI.csproj -c Release -o $(NUPKG_DIR)
 	@echo ""
-	@echo "Package created: $(NUPKG_DIR)/Bond.Compiler.CLI.$(VERSION).nupkg"
+	@echo "Package created: $(NUPKG_DIR)/BBC.Compiler.CLI.$(VERSION).nupkg"
 
 install: pack ## Install the tool globally
 	dotnet tool uninstall -g $(TOOL_NAME).compiler.cli 2>/dev/null || true
