@@ -16,7 +16,7 @@
     <!-- Tool configuration -->
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>bbc</ToolCommandName>
-    <PackageId>Bond.Parser.CLI</PackageId>
+    <PackageId>bbc</PackageId>
     <Version>0.2.0</Version>
     <Authors>Mirco De Zorzi</Authors>
     <Description>Bond IDL compiler and toolchain</Description>
