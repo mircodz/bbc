@@ -1,10 +1,16 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Bond.Parser.Parser;
 using Bond.Parser.Compatibility;
+using Bond.Parser.Json;
 using System.Text.Json;
+using System.Threading.Tasks;
 
-namespace Bond.Compiler.CLI;
+namespace Bond.Parser.CLI;
 
-class Program
+public static class Program
 {
     static async Task<int> Main(string[] args)
     {
@@ -38,6 +44,7 @@ class Program
         Console.WriteLine();
         Console.WriteLine("Parse Options:");
         Console.WriteLine("  -v, --verbose              Show detailed AST output");
+        Console.WriteLine("  --json                     Output AST as JSON (Bond schema format)");
         Console.WriteLine();
         Console.WriteLine("Breaking Options:");
         Console.WriteLine("  --against <reference>      Reference schema to compare against (file path or .git#branch=name)");
@@ -63,8 +70,9 @@ class Program
 
         var filePath = args[0];
         var verbose = args.Contains("--verbose") || args.Contains("-v");
+        var jsonOutput = args.Contains("--json");
 
-        var result = await BondParserFacade.ParseFileAsync(filePath);
+        var result = await ParserFacade.ParseFileAsync(filePath);
 
         if (!result.Success)
         {
@@ -82,7 +90,14 @@ class Program
 
         if (result.Ast != null)
         {
-            PrintSummary(result.Ast, filePath, verbose);
+            if (jsonOutput)
+            {
+                PrintJson(result.Ast);
+            }
+            else
+            {
+                PrintSummary(result.Ast, filePath, verbose);
+            }
         }
 
         return 0;
@@ -100,6 +115,7 @@ class Program
         var filePath = args[0];
         var againstIndex = Array.FindIndex(args, a => a == "--against");
         var formatIndex = Array.FindIndex(args, a => a.StartsWith("--error-format"));
+        var verbose = args.Contains("-v") || args.Contains("--verbose");
 
         if (againstIndex < 0 || againstIndex + 1 >= args.Length)
         {
@@ -130,7 +146,7 @@ class Program
             return 1;
         }
 
-        return await CheckBreaking(referenceFile, filePath, errorFormat);
+        return await CheckBreaking(referenceFile, filePath, errorFormat, verbose);
     }
 
     static async Task<string?> ResolveReference(string reference, string currentFilePath)
@@ -151,23 +167,35 @@ class Program
     static async Task<string?> ResolveGitReference(string gitRef, string currentFilePath)
     {
         var parts = gitRef.Split('#');
-        if (parts.Length != 2) return null;
+        if (parts.Length != 2)
+        {
+            return null;
+        }
 
         var refParts = parts[1].Split('=');
-        if (refParts.Length != 2) return null;
+        if (refParts.Length != 2)
+        {
+            return null;
+        }
 
         var refName = refParts[1];
 
         try
         {
             var gitRoot = await RunGitCommand("rev-parse --show-toplevel");
-            if (gitRoot == null) return null;
+            if (gitRoot == null)
+            {
+                return null;
+            }
 
             var fullPath = Path.GetFullPath(currentFilePath);
             var gitRelativePath = Path.GetRelativePath(gitRoot, fullPath).Replace('\\', '/');
 
             var content = await RunGitCommand($"show {refName}:{gitRelativePath}");
-            if (content == null) return null;
+            if (content == null)
+            {
+                return null;
+            }
 
             var tempFile = Path.GetTempFileName();
             var tempBondFile = Path.ChangeExtension(tempFile, ".bond");
@@ -203,15 +231,19 @@ class Program
         return process.ExitCode == 0 ? output.Trim() : null;
     }
 
-    static async Task<int> CheckBreaking(string oldFilePath, string newFilePath, string errorFormat)
+    static async Task<int> CheckBreaking(string oldFilePath, string newFilePath, string errorFormat, bool verbose)
     {
-        var oldResult = await BondParserFacade.ParseFileAsync(oldFilePath);
+        var oldResult = await ParserFacade.ParseFileAsync(oldFilePath);
         if (!oldResult.Success)
+        {
             return OutputParseError(errorFormat, oldResult.Errors, "Failed to parse reference schema", oldFilePath);
+        }
 
-        var newResult = await BondParserFacade.ParseFileAsync(newFilePath);
+        var newResult = await ParserFacade.ParseFileAsync(newFilePath);
         if (!newResult.Success)
+        {
             return OutputParseError(errorFormat, newResult.Errors, "Failed to parse current schema", newFilePath);
+        }
 
         var checker = new CompatibilityChecker();
         var changes = checker.CheckCompatibility(oldResult.Ast!, newResult.Ast!);
@@ -232,6 +264,13 @@ class Program
             return 1;
         }
 
+        if (verbose)
+        {
+            foreach (var change in changes)
+            {
+                Console.WriteLine($"{change.Category}: {change.Location}: {change.Description}");
+            }
+        }
         return 0;
     }
 
@@ -255,13 +294,6 @@ class Program
     static void WriteError(string message)
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine(message);
-        Console.ResetColor();
-    }
-
-    static void WriteSuccess(string message)
-    {
-        Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine(message);
         Console.ResetColor();
     }
@@ -308,6 +340,13 @@ class Program
         });
     }
 
+    static void PrintJson(Bond.Parser.Syntax.Bond ast)
+    {
+        var options = BondJsonSerializerOptions.GetOptions();
+        var json = JsonSerializer.Serialize(ast, options);
+        Console.WriteLine(json);
+    }
+
     static void PrintSummary(Bond.Parser.Syntax.Bond ast, string filePath, bool verbose)
     {
         Console.WriteLine($"parse: {filePath}");
@@ -333,32 +372,32 @@ class Program
         }
     }
 
-    static void PrintDeclarationDetails(Bond.Parser.Syntax.Declaration decl)
+    static void PrintDeclarationDetails(Syntax.Declaration decl)
     {
         switch (decl)
         {
-            case Bond.Parser.Syntax.StructDeclaration structDecl:
+            case Syntax.StructDeclaration structDecl:
                 foreach (var field in structDecl.Fields)
                 {
                     Console.WriteLine($"  {field.Ordinal}: {field.Modifier} {field.Type} {field.Name}");
                 }
                 break;
 
-            case Bond.Parser.Syntax.EnumDeclaration enumDecl:
+            case Syntax.EnumDeclaration enumDecl:
                 foreach (var constant in enumDecl.Constants)
                 {
                     Console.WriteLine($"  {constant}");
                 }
                 break;
 
-            case Bond.Parser.Syntax.ServiceDeclaration serviceDecl:
+            case Syntax.ServiceDeclaration serviceDecl:
                 foreach (var method in serviceDecl.Methods)
                 {
                     Console.WriteLine($"  {method}");
                 }
                 break;
 
-            case Bond.Parser.Syntax.AliasDeclaration aliasDecl:
+            case Syntax.AliasDeclaration aliasDecl:
                 Console.WriteLine($"  = {aliasDecl.AliasedType}");
                 break;
         }

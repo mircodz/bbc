@@ -4,6 +4,7 @@
 VERSION := $(shell cat version)
 NUPKG_DIR := ./nupkgs
 TOOL_NAME := bbc
+PKG_ID := Bond.Parser.CLI
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -12,10 +13,12 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 build: ## Build the project in Debug mode
-	dotnet build
+	dotnet build Bond.Parser/Bond.Parser.csproj -c Debug
+	dotnet build Bond.Parser.CLI/Bond.Parser.CLI.csproj -c Debug
 
 build-release: ## Build the project in Release mode
-	dotnet build -c Release
+	dotnet build Bond.Parser/Bond.Parser.csproj -c Release
+	dotnet build Bond.Parser.CLI/Bond.Parser.CLI.csproj -c Release
 
 test: ## Run all tests
 	dotnet test Bond.Parser.Tests/Bond.Parser.Tests.csproj
@@ -24,18 +27,18 @@ coverage: ## Run tests with coverage report
 	bash scripts/coverage.sh
 
 clean: ## Clean build artifacts
-	dotnet clean
+	dotnet clean Bond.sln || true
 	rm -rf $(NUPKG_DIR)
 	rm -rf */bin */obj
 
 pack: clean build-release ## Pack the CLI tool as a NuGet package
-	dotnet pack Bond.Compiler.CLI/Bond.Compiler.CLI.csproj -c Release -o $(NUPKG_DIR)
+	dotnet pack Bond.Parser.CLI/Bond.Parser.CLI.csproj -c Release -o $(NUPKG_DIR) /p:Version=$(VERSION)
 	@echo ""
-	@echo "Package created: $(NUPKG_DIR)/BBC.Compiler.CLI.$(VERSION).nupkg"
+	@echo "Package created: $(NUPKG_DIR)/$(PKG_ID).$(VERSION).nupkg"
 
 install: pack ## Install the tool globally
-	dotnet tool uninstall -g $(TOOL_NAME).compiler.cli 2>/dev/null || true
-	dotnet tool install --global --add-source $(NUPKG_DIR) BBC.Compiler.CLI --version $(VERSION)
+	dotnet tool uninstall -g $(PKG_ID) 2>/dev/null || true
+	dotnet tool install --global --add-source $(NUPKG_DIR) $(PKG_ID) --version $(VERSION)
 	@echo ""
 	@echo "Tool installed! You can now use: $(TOOL_NAME)"
 	@echo "Note: You may need to add ~/.dotnet/tools to your PATH"
@@ -45,7 +48,7 @@ install: pack ## Install the tool globally
 	@echo "  source ~/.zprofile"
 
 uninstall: ## Uninstall the tool
-	dotnet tool uninstall -g $(TOOL_NAME).compiler.cli
+	dotnet tool uninstall -g $(PKG_ID)
 
 reinstall: uninstall install ## Reinstall the tool (clean install)
 

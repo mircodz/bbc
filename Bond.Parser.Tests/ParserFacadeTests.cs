@@ -1,14 +1,15 @@
+using System.Threading.Tasks;
 using Bond.Parser.Parser;
 using Bond.Parser.Syntax;
 using FluentAssertions;
 
 namespace Bond.Parser.Tests;
 
-public class ParserTests
+public class ParserFacadeTests
 {
     private async Task<ParseResult> Parse(string input, ImportResolver? importResolver = null)
     {
-        return await BondParserFacade.ParseStringAsync(input, importResolver);
+        return await ParserFacade.ParseStringAsync(input, importResolver);
     }
 
     private static Task<(string, string)> MockImportResolver(string currentFile, string importPath)

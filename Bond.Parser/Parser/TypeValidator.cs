@@ -1,3 +1,5 @@
+using System;
+using System.Numerics;
 using Bond.Parser.Syntax;
 using Bond.Parser.Util;
 
@@ -14,7 +16,9 @@ public static class TypeValidator
     public static bool ValidateDefaultValue(BondType fieldType, Default? defaultValue)
     {
         if (defaultValue == null)
+        {
             return true;
+        }
 
         // Maybe/Nullable types can have 'nothing' default
         if (fieldType is BondType.Maybe or BondType.Nullable)
@@ -37,7 +41,7 @@ public static class TypeValidator
             (BondType.UInt8, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<byte>(),
             (BondType.UInt16, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<ushort>(),
             (BondType.UInt32, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<uint>(),
-            (BondType.UInt64, Default.Integer i) => i.Value >= 0,
+            (BondType.UInt64, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<ulong>(),
             (BondType.Float, Default.Float) => true,
             (BondType.Float, Default.Integer) => true, // Can convert int to float
             (BondType.Double, Default.Float) => true,
@@ -46,11 +50,13 @@ public static class TypeValidator
             (BondType.String, Default.String) => true,
             (BondType.WString, Default.String) => true,
             (BondType.UserDefined { Declaration: EnumDeclaration }, Default.Enum) => true,
+            (BondType.UserDefined { Declaration: EnumDeclaration }, Default.Nothing) => true,
             (BondType.UnresolvedUserType, Default.Enum) => true,
             (BondType.UnresolvedUserType, Default.String) => true,
             (BondType.UnresolvedUserType, Default.Integer) => true,
             (BondType.UnresolvedUserType, Default.Float) => true,
             (BondType.UnresolvedUserType, Default.Bool) => true,
+            (BondType.UnresolvedUserType, Default.Nothing) => true,
             (BondType.TypeParameter, _) => true,
             _ => false
         };

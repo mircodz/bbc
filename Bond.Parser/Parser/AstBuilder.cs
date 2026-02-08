@@ -1,5 +1,7 @@
-using Antlr4.Runtime;
-using Antlr4.Runtime.Tree;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
 using Bond.Parser.Grammar;
 using Bond.Parser.Syntax;
 
@@ -10,8 +12,8 @@ namespace Bond.Parser.Parser;
 /// </summary>
 public class AstBuilder : BondBaseVisitor<object?>
 {
-    private readonly List<Namespace> _currentNamespaces = new();
-    private readonly List<TypeParam> _currentTypeParams = new();
+    private readonly List<Namespace> _currentNamespaces = [];
+    private readonly List<TypeParam> _currentTypeParams = [];
 
     public override Syntax.Bond VisitBond(BondParser.BondContext context)
     {
@@ -72,15 +74,29 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override Declaration VisitDeclaration(BondParser.DeclarationContext context)
     {
         if (context.forward() != null)
+        {
             return (Declaration)Visit(context.forward())!;
+        }
+
         if (context.alias() != null)
+        {
             return (Declaration)Visit(context.alias())!;
+        }
+
         if (context.structDecl() != null)
+        {
             return (Declaration)Visit(context.structDecl())!;
+        }
+
         if (context.@enum() != null)
+        {
             return (Declaration)Visit(context.@enum())!;
+        }
+
         if (context.service() != null)
+        {
             return (Declaration)Visit(context.service())!;
+        }
 
         throw new InvalidOperationException("Unknown declaration type");
     }
@@ -90,7 +106,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         var name = (string)Visit(context.identifier())!;
         var typeParams = context.typeParameters() != null
             ? (TypeParam[])Visit(context.typeParameters())!
-            : Array.Empty<TypeParam>();
+            : [];
 
         return new ForwardDeclaration
         {
@@ -105,7 +121,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         var name = (string)Visit(context.identifier())!;
         var typeParams = context.typeParameters() != null
             ? (TypeParam[])Visit(context.typeParameters())!
-            : Array.Empty<TypeParam>();
+            : [];
 
         // Add type parameters to current scope for type resolution
         _currentTypeParams.AddRange(typeParams);
@@ -128,12 +144,12 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var name = (string)Visit(context.identifier())!;
         var typeParams = context.typeParameters() != null
             ? (TypeParam[])Visit(context.typeParameters())!
-            : Array.Empty<TypeParam>();
+            : [];
 
         // Add type parameters to current scope
         _currentTypeParams.AddRange(typeParams);
@@ -141,11 +157,11 @@ public class AstBuilder : BondBaseVisitor<object?>
         Declaration result;
         if (context.structView() != null)
         {
-            result = (Declaration)VisitStructView(context.structView(), name, typeParams, attributes)!;
+            result = VisitStructView(context.structView(), name, typeParams, attributes)!;
         }
         else if (context.structDef() != null)
         {
-            result = (Declaration)VisitStructDef(context.structDef(), name, typeParams, attributes)!;
+            result = VisitStructDef(context.structDef(), name, typeParams, attributes)!;
         }
         else
         {
@@ -160,9 +176,6 @@ public class AstBuilder : BondBaseVisitor<object?>
 
     private StructDeclaration VisitStructView(BondParser.StructViewContext context, string name, TypeParam[] typeParams, Syntax.Attribute[] attributes)
     {
-        var baseTypeName = (string[])Visit(context.qualifiedName())!;
-        var fieldNames = context.viewFieldList().identifier().Select(id => (string)Visit(id)!).ToHashSet();
-
         return new StructDeclaration
         {
             Namespaces = _currentNamespaces.ToArray(),
@@ -170,7 +183,7 @@ public class AstBuilder : BondBaseVisitor<object?>
             Name = name,
             TypeParameters = typeParams,
             BaseType = null,
-            Fields = Array.Empty<Field>()
+            Fields = []
         };
     }
 
@@ -200,7 +213,7 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var name = (string)Visit(context.identifier())!;
         var constants = context.enumConstant()
@@ -212,7 +225,7 @@ public class AstBuilder : BondBaseVisitor<object?>
             Namespaces = _currentNamespaces.ToArray(),
             Attributes = attributes,
             Name = name,
-            TypeParameters = Array.Empty<TypeParam>(),
+            TypeParameters = [],
             Constants = constants
         };
     }
@@ -220,9 +233,31 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override Constant VisitEnumConstant(BondParser.EnumConstantContext context)
     {
         var name = (string)Visit(context.identifier())!;
-        var value = context.INTEGER_LITERAL() != null
-            ? (int)ParseInteger(context.INTEGER_LITERAL().GetText())
-            : (int?)null;
+        long? value = null;
+
+        if (context.INTEGER_LITERAL() != null)
+        {
+            var bigIntValue = ParseInteger(context.INTEGER_LITERAL().GetText());
+            var isNegative = context.MINUS() != null;
+            var finalValue = isNegative ? -bigIntValue : bigIntValue;
+
+            // If value fits in int64, use it directly
+            if (finalValue >= long.MinValue && finalValue <= long.MaxValue)
+            {
+                value = (long)finalValue;
+            }
+            // If value is in ulong range but > long.MaxValue, interpret as two's complement
+            else if (finalValue >= 0 && finalValue <= ulong.MaxValue)
+            {
+                // Convert unsigned to signed two's complement
+                value = unchecked((long)(ulong)finalValue);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Enum constant '{name}' value {finalValue} is out of range for int64");
+            }
+        }
 
         return new Constant(name, value);
     }
@@ -231,12 +266,12 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var name = (string)Visit(context.identifier())!;
         var typeParams = context.typeParameters() != null
             ? (TypeParam[])Visit(context.typeParameters())!
-            : Array.Empty<TypeParam>();
+            : [];
 
         // Add type parameters to current scope
         _currentTypeParams.AddRange(typeParams);
@@ -267,7 +302,7 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var name = (string)Visit(context.identifier())!;
 
@@ -306,11 +341,19 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override MethodType VisitMethodResultType(BondParser.MethodResultTypeContext context)
     {
         if (context.VOID() != null)
+        {
             return MethodType.Void.Instance;
+        }
+
         if (context.methodTypeStreaming() != null)
+        {
             return (MethodType)Visit(context.methodTypeStreaming())!;
+        }
+
         if (context.methodTypeUnary() != null)
+        {
             return (MethodType)Visit(context.methodTypeUnary())!;
+        }
 
         throw new InvalidOperationException("Unknown method result type");
     }
@@ -318,11 +361,19 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override MethodType VisitMethodInputType(BondParser.MethodInputTypeContext context)
     {
         if (context.VOID() != null)
+        {
             return MethodType.Void.Instance;
+        }
+
         if (context.methodTypeStreaming() != null)
+        {
             return (MethodType)Visit(context.methodTypeStreaming())!;
+        }
+
         if (context.methodTypeUnary() != null)
+        {
             return (MethodType)Visit(context.methodTypeUnary())!;
+        }
 
         throw new InvalidOperationException("Unknown method input type");
     }
@@ -343,7 +394,7 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var ordinal = (ushort)ParseInteger(context.fieldOrdinal().INTEGER_LITERAL().GetText());
 
@@ -358,17 +409,11 @@ public class AstBuilder : BondBaseVisitor<object?>
             ? (Default?)Visit(context.default_())
             : null;
 
-        // Wrap containers and basic types with 'nothing' default in Maybe
-        if (defaultValue is Default.Nothing)
+        // Bond semantics: any non-struct type with default 'nothing' becomes Maybe<T>
+        // (structs are rejected during semantic analysis).
+        if (defaultValue is Default.Nothing && type is not BondType.Maybe)
         {
-            bool canWrap = type is BondType.List or BondType.Vector or BondType.Set or BondType.Map
-                          or BondType.String or BondType.WString or BondType.Bool
-                          or BondType.Int8 or BondType.Int16 or BondType.Int32 or BondType.Int64
-                          or BondType.UInt8 or BondType.UInt16 or BondType.UInt32 or BondType.UInt64
-                          or BondType.Float or BondType.Double;
-
-            if (canWrap)
-                type = new BondType.Maybe(type);
+            type = new BondType.Maybe(type);
         }
 
         return new Field(attributes, ordinal, modifier, type, name, defaultValue);
@@ -377,29 +422,49 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override object? VisitModifier(BondParser.ModifierContext context)
     {
         if (context.REQUIRED_OPTIONAL() != null)
+        {
             return FieldModifier.RequiredOptional;
+        }
+
         if (context.REQUIRED() != null)
+        {
             return FieldModifier.Required;
+        }
+
         return FieldModifier.Optional;
     }
 
     public override BondType VisitFieldType(BondParser.FieldTypeContext context)
     {
         if (context.BOND_META_NAME() != null)
+        {
             return BondType.MetaName.Instance;
+        }
+
         if (context.BOND_META_FULL_NAME() != null)
+        {
             return BondType.MetaFullName.Instance;
+        }
+
         return (BondType)Visit(context.type())!;
     }
 
     public override BondType VisitType(BondParser.TypeContext context)
     {
         if (context.basicType() != null)
+        {
             return (BondType)Visit(context.basicType())!;
+        }
+
         if (context.complexType() != null)
+        {
             return (BondType)Visit(context.complexType())!;
+        }
+
         if (context.userType() != null)
+        {
             return (BondType)Visit(context.userType())!;
+        }
 
         throw new InvalidOperationException("Unknown type");
     }
@@ -433,7 +498,9 @@ public class AstBuilder : BondBaseVisitor<object?>
             return new BondType.List(elementType);
         }
         if (context.BLOB() != null)
+        {
             return BondType.Blob.Instance;
+        }
         if (context.VECTOR() != null)
         {
             var elementType = (BondType)Visit(context.type())!;
@@ -467,9 +534,14 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override BondType VisitKeyType(BondParser.KeyTypeContext context)
     {
         if (context.basicType() != null)
+        {
             return (BondType)Visit(context.basicType())!;
+        }
+
         if (context.userType() != null)
+        {
             return (BondType)Visit(context.userType())!;
+        }
 
         throw new InvalidOperationException("Unknown key type");
     }
@@ -490,7 +562,7 @@ public class AstBuilder : BondBaseVisitor<object?>
 
         var typeArgs = context.typeArgs() != null
             ? (BondType[])Visit(context.typeArgs())!
-            : Array.Empty<BondType>();
+            : [];
 
         return new BondType.UnresolvedUserType(name, typeArgs);
     }
@@ -511,7 +583,7 @@ public class AstBuilder : BondBaseVisitor<object?>
 
         var typeArgs = context.typeArgs() != null
             ? (BondType[])Visit(context.typeArgs())!
-            : Array.Empty<BondType>();
+            : [];
 
         return new BondType.UnresolvedUserType(name, typeArgs);
     }
@@ -532,7 +604,7 @@ public class AstBuilder : BondBaseVisitor<object?>
 
         var typeArgs = context.typeArgs() != null
             ? (BondType[])Visit(context.typeArgs())!
-            : Array.Empty<BondType>();
+            : [];
 
         return new BondType.UnresolvedUserType(name, typeArgs);
     }
@@ -547,11 +619,22 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override BondType VisitTypeArg(BondParser.TypeArgContext context)
     {
         if (context.type() != null)
+        {
             return (BondType)Visit(context.type())!;
+        }
+
         if (context.INTEGER_LITERAL() != null)
         {
             var value = ParseInteger(context.INTEGER_LITERAL().GetText());
-            return new BondType.IntTypeArg(value);
+
+            // Type arguments must fit in int64
+            if (value < long.MinValue || value > long.MaxValue)
+            {
+                throw new InvalidOperationException(
+                    $"Type argument value {value} is out of range for int64");
+            }
+
+            return new BondType.IntTypeArg((long)value);
         }
 
         throw new InvalidOperationException("Unknown type argument");
@@ -577,25 +660,35 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override Default VisitDefault_(BondParser.Default_Context context)
     {
         if (context.TRUE() != null)
+        {
             return new Default.Bool(true);
+        }
         if (context.FALSE() != null)
+        {
             return new Default.Bool(false);
+        }
         if (context.NOTHING() != null)
+        {
             return Default.Nothing.Instance;
+        }
         if (context.STRING_LITERAL() != null)
         {
             var value = Unquote(context.STRING_LITERAL().GetText());
             return new Default.String(value);
         }
+
+        // Check for optional minus sign
+        var isNegative = context.MINUS() != null;
+
         if (context.FLOAT_LITERAL() != null)
         {
             var value = double.Parse(context.FLOAT_LITERAL().GetText());
-            return new Default.Float(value);
+            return new Default.Float(isNegative ? -value : value);
         }
         if (context.INTEGER_LITERAL() != null)
         {
             var value = ParseInteger(context.INTEGER_LITERAL().GetText());
-            return new Default.Integer(value);
+            return new Default.Integer(isNegative ? -value : value);
         }
         if (context.identifier() != null)
         {
@@ -634,7 +727,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         return str;
     }
 
-    private static long ParseInteger(string str)
+    private static BigInteger ParseInteger(string str)
     {
         bool isNegative = str.StartsWith('-');
         if (isNegative)
@@ -642,18 +735,27 @@ public class AstBuilder : BondBaseVisitor<object?>
             str = str[1..];
         }
 
-        long value;
+        BigInteger value;
         if (str.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
-            value = Convert.ToInt64(str[2..], 16);
+            // Parse hex as unsigned by prepending "0" to ensure positive interpretation
+            var hexDigits = str[2..];
+            // BigInteger.Parse with HexNumber treats high bit as sign bit
+            // Prepend "0" to force positive interpretation
+            value = BigInteger.Parse("0" + hexDigits, System.Globalization.NumberStyles.HexNumber);
         }
         else if (str.StartsWith("0o", StringComparison.OrdinalIgnoreCase))
         {
-            value = Convert.ToInt64(str[2..], 8);
+            // Parse octal manually (BigInteger doesn't have native octal support)
+            value = 0;
+            foreach (char c in str[2..])
+            {
+                value = value * 8 + (c - '0');
+            }
         }
         else
         {
-            value = long.Parse(str);
+            value = BigInteger.Parse(str);
         }
 
         return isNegative ? -value : value;

@@ -5,7 +5,7 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bond.Parser", "Bond.Parser\Bond.Parser.csproj", "{FA9D62FC-6136-419B-8AF9-0EEA1D76ADFA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bond.Compiler.CLI", "Bond.Compiler.CLI\Bond.Compiler.CLI.csproj", "{7B5C8A17-A7D0-467A-A581-9445AC70C73A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bond.Parser.CLI", "Bond.Parser.CLI\Bond.Parser.CLI.csproj", "{7B5C8A17-A7D0-467A-A581-9445AC70C73A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bond.Parser.Tests", "Bond.Parser.Tests\Bond.Parser.Tests.csproj", "{D6FEA5A7-3F47-46B7-80F8-649DD0AAD345}"
 EndProject

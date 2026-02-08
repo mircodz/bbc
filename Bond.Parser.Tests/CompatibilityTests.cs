@@ -1,6 +1,7 @@
+using System.Linq;
+using System.Threading.Tasks;
 using Bond.Parser.Compatibility;
 using Bond.Parser.Parser;
-using Bond.Parser.Syntax;
 using FluentAssertions;
 
 namespace Bond.Parser.Tests;
@@ -11,7 +12,7 @@ public class CompatibilityTests
 
     private async Task<Syntax.Bond> ParseSchema(string input)
     {
-        var result = await BondParserFacade.ParseStringAsync(input);
+        var result = await ParserFacade.ParseStringAsync(input);
         result.Success.Should().BeTrue($"parsing should succeed but got errors: {string.Join(", ", result.Errors.Select(e => e.Message))}");
         return result.Ast!;
     }

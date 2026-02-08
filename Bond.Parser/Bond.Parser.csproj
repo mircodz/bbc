@@ -2,13 +2,13 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Title>Bond IDL Parser</Title>
     <PackageId>Bond.Parser</PackageId>
     <NoWarn>CS1584,CS1658,CS1591</NoWarn>
+    <RootNamespace>Bond.Parser</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

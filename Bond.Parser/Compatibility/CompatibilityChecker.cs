@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Compatibility;
@@ -112,7 +114,7 @@ public class CompatibilityChecker
                     : ChangeCategory.Compatible;
 
                 var recommendation = oldField.Modifier == FieldModifier.Required
-                    ? "Removing required fields breaks compatibility. Comment out instead."
+                    ? "Removing required fields breaks compatibility."
                     : "Consider commenting out the field rather than removing it to avoid ordinal/name reuse.";
 
                 changes.Add(new SchemaChange(
@@ -473,8 +475,16 @@ public class CompatibilityChecker
 
     private bool DefaultsEqual(Default? default1, Default? default2)
     {
-        if (default1 == null && default2 == null) return true;
-        if (default1 == null || default2 == null) return false;
+        if (default1 == null && default2 == null)
+        {
+            return true;
+        }
+
+        if (default1 == null || default2 == null)
+        {
+            return false;
+        }
+
         return default1.ToString() == default2.ToString();
     }
 }
