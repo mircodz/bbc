@@ -107,6 +107,11 @@ public class SemanticAnalyzer
 
         foreach (var field in structDecl.Fields)
         {
+            if (!TypeValidator.IsValidOrdinal(field.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Field '{field.Name}' has invalid ordinal {field.Ordinal}");
+            }
             ValidateField(field, structDecl.Namespaces);
         }
     }
@@ -192,6 +197,18 @@ public class SemanticAnalyzer
     {
         var actualType = ResolveAliases(field.Type, namespaces);
 
+        // Validate map/set key types
+        if (actualType is BondType.Set set && !TypeValidator.IsValidKeyType(set.KeyType))
+        {
+            throw new InvalidOperationException(
+                $"Field '{field.Name}' has invalid set key type {set.KeyType}");
+        }
+        if (actualType is BondType.Map map && !TypeValidator.IsValidKeyType(map.KeyType))
+        {
+            throw new InvalidOperationException(
+                $"Field '{field.Name}' has invalid map key type {map.KeyType}");
+        }
+
         if (!TypeValidator.ValidateDefaultValue(actualType, field.DefaultValue))
         {
             throw new InvalidOperationException(
@@ -212,6 +229,12 @@ public class SemanticAnalyzer
         {
             throw new InvalidOperationException(
                 $"Enum field '{field.Name}' must have a default value");
+        }
+
+        // Centralized enum field validation for resolved enums
+        if (actualType.IsEnum())
+        {
+            TypeValidator.ValidateEnumField(field);
         }
 
         TypeValidator.ValidateStructField(field);
