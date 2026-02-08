@@ -1,0 +1,18 @@
+namespace examples.catalog
+
+struct Product
+{
+    0: required string id;
+    1: required string name;
+    2: optional double price;
+}
+
+struct GetProductRequest
+{
+    0: required string id;
+}
+
+service Catalog
+{
+    Product get_product(GetProductRequest request);
+}

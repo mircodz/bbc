@@ -214,6 +214,15 @@ public class TypeResolver(SymbolTable symbolTable)
         // Look up the declaration in the symbol table
         var declaration = symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
 
+        // Gracefully accept primitive types with different casing (e.g., "String")
+        if (declaration == null && unresolved.TypeArguments.Length == 0)
+        {
+            if (TryResolvePrimitive(unresolved.QualifiedName, out var primitive))
+            {
+                return primitive;
+            }
+        }
+
         if (declaration == null)
         {
             throw new InvalidOperationException(
@@ -252,6 +261,34 @@ public class TypeResolver(SymbolTable symbolTable)
 
         // Create UserDefined type with resolved declaration and type arguments
         return new BondType.UserDefined(declaration, resolvedTypeArgs);
+    }
+
+    private static bool TryResolvePrimitive(string[] qualifiedName, out BondType primitive)
+    {
+        primitive = null!;
+        if (qualifiedName.Length != 1)
+        {
+            return false;
+        }
+
+        switch (qualifiedName[0].ToLowerInvariant())
+        {
+            case "int8": primitive = BondType.Int8.Instance; return true;
+            case "int16": primitive = BondType.Int16.Instance; return true;
+            case "int32": primitive = BondType.Int32.Instance; return true;
+            case "int64": primitive = BondType.Int64.Instance; return true;
+            case "uint8": primitive = BondType.UInt8.Instance; return true;
+            case "uint16": primitive = BondType.UInt16.Instance; return true;
+            case "uint32": primitive = BondType.UInt32.Instance; return true;
+            case "uint64": primitive = BondType.UInt64.Instance; return true;
+            case "float": primitive = BondType.Float.Instance; return true;
+            case "double": primitive = BondType.Double.Instance; return true;
+            case "bool": primitive = BondType.Bool.Instance; return true;
+            case "string": primitive = BondType.String.Instance; return true;
+            case "wstring": primitive = BondType.WString.Instance; return true;
+            case "blob": primitive = BondType.Blob.Instance; return true;
+            default: return false;
+        }
     }
 
     private BondType ResolveUserDefinedType(BondType.UserDefined userDefined, Namespace[] namespaces, StructDeclaration? currentStruct)

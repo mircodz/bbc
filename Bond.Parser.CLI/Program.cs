@@ -115,6 +115,7 @@ public static class Program
         var filePath = args[0];
         var againstIndex = Array.FindIndex(args, a => a == "--against");
         var formatIndex = Array.FindIndex(args, a => a.StartsWith("--error-format"));
+        var verbose = args.Contains("-v") || args.Contains("--verbose");
 
         if (againstIndex < 0 || againstIndex + 1 >= args.Length)
         {
@@ -145,7 +146,7 @@ public static class Program
             return 1;
         }
 
-        return await CheckBreaking(referenceFile, filePath, errorFormat);
+        return await CheckBreaking(referenceFile, filePath, errorFormat, verbose);
     }
 
     static async Task<string?> ResolveReference(string reference, string currentFilePath)
@@ -230,7 +231,7 @@ public static class Program
         return process.ExitCode == 0 ? output.Trim() : null;
     }
 
-    static async Task<int> CheckBreaking(string oldFilePath, string newFilePath, string errorFormat)
+    static async Task<int> CheckBreaking(string oldFilePath, string newFilePath, string errorFormat, bool verbose)
     {
         var oldResult = await ParserFacade.ParseFileAsync(oldFilePath);
         if (!oldResult.Success)
@@ -263,6 +264,13 @@ public static class Program
             return 1;
         }
 
+        if (verbose)
+        {
+            foreach (var change in changes)
+            {
+                Console.WriteLine($"{change.Category}: {change.Location}: {change.Description}");
+            }
+        }
         return 0;
     }
 
