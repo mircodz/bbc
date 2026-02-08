@@ -2,11 +2,9 @@ namespace examples.catalog
 
 struct Product
 {
-    0: required string id;
-    // Breaking change: renamed required field 'name' -> 'title'
-    1: required string title;
-    2: optional double price;
-    // Compatible addition: new optional description
+    0: optional string id;
+    1: required wstring title;
+    // 2: required double price;
     3: optional string description;
 }
 

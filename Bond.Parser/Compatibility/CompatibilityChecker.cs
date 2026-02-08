@@ -114,7 +114,7 @@ public class CompatibilityChecker
                     : ChangeCategory.Compatible;
 
                 var recommendation = oldField.Modifier == FieldModifier.Required
-                    ? "Removing required fields breaks compatibility. Comment out instead."
+                    ? "Removing required fields breaks compatibility."
                     : "Consider commenting out the field rather than removing it to avoid ordinal/name reuse.";
 
                 changes.Add(new SchemaChange(
