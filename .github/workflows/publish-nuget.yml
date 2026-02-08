@@ -1,0 +1,52 @@
+name: Publish NuGet (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pack-and-push:
+    if: github.actor == 'mircodz'
+    environment: publish
+    runs-on: ubuntu-latest
+    env:
+      VERSION_FILE: version
+      PROJECT: Bond.Parser.CLI/Bond.Parser.CLI.csproj
+      OUT_DIR: artifacts/nupkg
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@f43a0e5ff53a1cb5e66eaf0efb8f9ff1e6b50c3a # v4.1.6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Ensure tagged release
+        if: github.ref_type != 'tag'
+        run: |
+          echo "This workflow can only run on tags." >&2
+          exit 1
+
+      - name: Read version
+        id: version
+        run: echo "VERSION=$(cat $VERSION_FILE)" >> "$GITHUB_OUTPUT"
+
+      - name: Pack
+        run: dotnet pack $PROJECT -c Release -o $OUT_DIR /p:Version=${{ steps.version.outputs.VERSION }}
+
+      - name: Push to GitHub Packages
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push "$OUT_DIR"/*.nupkg \
+            --source "https://nuget.pkg.github.com/${OWNER}/index.json" \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
