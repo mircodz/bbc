@@ -4,7 +4,7 @@
 VERSION := $(shell cat version)
 NUPKG_DIR := ./nupkgs
 TOOL_NAME := bbc
-PKG_ID := Bond.Parser.CLI
+PKG_ID := bbc
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
