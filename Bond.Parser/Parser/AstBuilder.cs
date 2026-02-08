@@ -1,5 +1,3 @@
-using Antlr4.Runtime;
-using Antlr4.Runtime.Tree;
 using Bond.Parser.Grammar;
 using Bond.Parser.Syntax;
 
@@ -10,8 +8,8 @@ namespace Bond.Parser.Parser;
 /// </summary>
 public class AstBuilder : BondBaseVisitor<object?>
 {
-    private readonly List<Namespace> _currentNamespaces = new();
-    private readonly List<TypeParam> _currentTypeParams = new();
+    private readonly List<Namespace> _currentNamespaces = [];
+    private readonly List<TypeParam> _currentTypeParams = [];
 
     public override Syntax.Bond VisitBond(BondParser.BondContext context)
     {
@@ -72,15 +70,29 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override Declaration VisitDeclaration(BondParser.DeclarationContext context)
     {
         if (context.forward() != null)
+        {
             return (Declaration)Visit(context.forward())!;
+        }
+
         if (context.alias() != null)
+        {
             return (Declaration)Visit(context.alias())!;
+        }
+
         if (context.structDecl() != null)
+        {
             return (Declaration)Visit(context.structDecl())!;
+        }
+
         if (context.@enum() != null)
+        {
             return (Declaration)Visit(context.@enum())!;
+        }
+
         if (context.service() != null)
+        {
             return (Declaration)Visit(context.service())!;
+        }
 
         throw new InvalidOperationException("Unknown declaration type");
     }
@@ -90,7 +102,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         var name = (string)Visit(context.identifier())!;
         var typeParams = context.typeParameters() != null
             ? (TypeParam[])Visit(context.typeParameters())!
-            : Array.Empty<TypeParam>();
+            : [];
 
         return new ForwardDeclaration
         {
@@ -105,7 +117,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         var name = (string)Visit(context.identifier())!;
         var typeParams = context.typeParameters() != null
             ? (TypeParam[])Visit(context.typeParameters())!
-            : Array.Empty<TypeParam>();
+            : [];
 
         // Add type parameters to current scope for type resolution
         _currentTypeParams.AddRange(typeParams);
@@ -128,12 +140,12 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var name = (string)Visit(context.identifier())!;
         var typeParams = context.typeParameters() != null
             ? (TypeParam[])Visit(context.typeParameters())!
-            : Array.Empty<TypeParam>();
+            : [];
 
         // Add type parameters to current scope
         _currentTypeParams.AddRange(typeParams);
@@ -141,11 +153,11 @@ public class AstBuilder : BondBaseVisitor<object?>
         Declaration result;
         if (context.structView() != null)
         {
-            result = (Declaration)VisitStructView(context.structView(), name, typeParams, attributes)!;
+            result = VisitStructView(context.structView(), name, typeParams, attributes)!;
         }
         else if (context.structDef() != null)
         {
-            result = (Declaration)VisitStructDef(context.structDef(), name, typeParams, attributes)!;
+            result = VisitStructDef(context.structDef(), name, typeParams, attributes)!;
         }
         else
         {
@@ -160,9 +172,6 @@ public class AstBuilder : BondBaseVisitor<object?>
 
     private StructDeclaration VisitStructView(BondParser.StructViewContext context, string name, TypeParam[] typeParams, Syntax.Attribute[] attributes)
     {
-        var baseTypeName = (string[])Visit(context.qualifiedName())!;
-        var fieldNames = context.viewFieldList().identifier().Select(id => (string)Visit(id)!).ToHashSet();
-
         return new StructDeclaration
         {
             Namespaces = _currentNamespaces.ToArray(),
@@ -170,7 +179,7 @@ public class AstBuilder : BondBaseVisitor<object?>
             Name = name,
             TypeParameters = typeParams,
             BaseType = null,
-            Fields = Array.Empty<Field>()
+            Fields = []
         };
     }
 
@@ -200,7 +209,7 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var name = (string)Visit(context.identifier())!;
         var constants = context.enumConstant()
@@ -212,7 +221,7 @@ public class AstBuilder : BondBaseVisitor<object?>
             Namespaces = _currentNamespaces.ToArray(),
             Attributes = attributes,
             Name = name,
-            TypeParameters = Array.Empty<TypeParam>(),
+            TypeParameters = [],
             Constants = constants
         };
     }
@@ -231,12 +240,12 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var name = (string)Visit(context.identifier())!;
         var typeParams = context.typeParameters() != null
             ? (TypeParam[])Visit(context.typeParameters())!
-            : Array.Empty<TypeParam>();
+            : [];
 
         // Add type parameters to current scope
         _currentTypeParams.AddRange(typeParams);
@@ -267,7 +276,7 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var name = (string)Visit(context.identifier())!;
 
@@ -306,11 +315,19 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override MethodType VisitMethodResultType(BondParser.MethodResultTypeContext context)
     {
         if (context.VOID() != null)
+        {
             return MethodType.Void.Instance;
+        }
+
         if (context.methodTypeStreaming() != null)
+        {
             return (MethodType)Visit(context.methodTypeStreaming())!;
+        }
+
         if (context.methodTypeUnary() != null)
+        {
             return (MethodType)Visit(context.methodTypeUnary())!;
+        }
 
         throw new InvalidOperationException("Unknown method result type");
     }
@@ -318,11 +335,19 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override MethodType VisitMethodInputType(BondParser.MethodInputTypeContext context)
     {
         if (context.VOID() != null)
+        {
             return MethodType.Void.Instance;
+        }
+
         if (context.methodTypeStreaming() != null)
+        {
             return (MethodType)Visit(context.methodTypeStreaming())!;
+        }
+
         if (context.methodTypeUnary() != null)
+        {
             return (MethodType)Visit(context.methodTypeUnary())!;
+        }
 
         throw new InvalidOperationException("Unknown method input type");
     }
@@ -343,7 +368,7 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var attributes = context.attributes() != null
             ? (Syntax.Attribute[])Visit(context.attributes())!
-            : Array.Empty<Syntax.Attribute>();
+            : [];
 
         var ordinal = (ushort)ParseInteger(context.fieldOrdinal().INTEGER_LITERAL().GetText());
 
@@ -368,7 +393,9 @@ public class AstBuilder : BondBaseVisitor<object?>
                           or BondType.Float or BondType.Double;
 
             if (canWrap)
+            {
                 type = new BondType.Maybe(type);
+            }
         }
 
         return new Field(attributes, ordinal, modifier, type, name, defaultValue);
@@ -377,29 +404,49 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override object? VisitModifier(BondParser.ModifierContext context)
     {
         if (context.REQUIRED_OPTIONAL() != null)
+        {
             return FieldModifier.RequiredOptional;
+        }
+
         if (context.REQUIRED() != null)
+        {
             return FieldModifier.Required;
+        }
+
         return FieldModifier.Optional;
     }
 
     public override BondType VisitFieldType(BondParser.FieldTypeContext context)
     {
         if (context.BOND_META_NAME() != null)
+        {
             return BondType.MetaName.Instance;
+        }
+
         if (context.BOND_META_FULL_NAME() != null)
+        {
             return BondType.MetaFullName.Instance;
+        }
+
         return (BondType)Visit(context.type())!;
     }
 
     public override BondType VisitType(BondParser.TypeContext context)
     {
         if (context.basicType() != null)
+        {
             return (BondType)Visit(context.basicType())!;
+        }
+
         if (context.complexType() != null)
+        {
             return (BondType)Visit(context.complexType())!;
+        }
+
         if (context.userType() != null)
+        {
             return (BondType)Visit(context.userType())!;
+        }
 
         throw new InvalidOperationException("Unknown type");
     }
@@ -433,7 +480,9 @@ public class AstBuilder : BondBaseVisitor<object?>
             return new BondType.List(elementType);
         }
         if (context.BLOB() != null)
+        {
             return BondType.Blob.Instance;
+        }
         if (context.VECTOR() != null)
         {
             var elementType = (BondType)Visit(context.type())!;
@@ -467,9 +516,14 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override BondType VisitKeyType(BondParser.KeyTypeContext context)
     {
         if (context.basicType() != null)
+        {
             return (BondType)Visit(context.basicType())!;
+        }
+
         if (context.userType() != null)
+        {
             return (BondType)Visit(context.userType())!;
+        }
 
         throw new InvalidOperationException("Unknown key type");
     }
@@ -490,7 +544,7 @@ public class AstBuilder : BondBaseVisitor<object?>
 
         var typeArgs = context.typeArgs() != null
             ? (BondType[])Visit(context.typeArgs())!
-            : Array.Empty<BondType>();
+            : [];
 
         return new BondType.UnresolvedUserType(name, typeArgs);
     }
@@ -511,7 +565,7 @@ public class AstBuilder : BondBaseVisitor<object?>
 
         var typeArgs = context.typeArgs() != null
             ? (BondType[])Visit(context.typeArgs())!
-            : Array.Empty<BondType>();
+            : [];
 
         return new BondType.UnresolvedUserType(name, typeArgs);
     }
@@ -532,7 +586,7 @@ public class AstBuilder : BondBaseVisitor<object?>
 
         var typeArgs = context.typeArgs() != null
             ? (BondType[])Visit(context.typeArgs())!
-            : Array.Empty<BondType>();
+            : [];
 
         return new BondType.UnresolvedUserType(name, typeArgs);
     }
@@ -547,7 +601,10 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override BondType VisitTypeArg(BondParser.TypeArgContext context)
     {
         if (context.type() != null)
+        {
             return (BondType)Visit(context.type())!;
+        }
+
         if (context.INTEGER_LITERAL() != null)
         {
             var value = ParseInteger(context.INTEGER_LITERAL().GetText());
@@ -577,11 +634,17 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override Default VisitDefault_(BondParser.Default_Context context)
     {
         if (context.TRUE() != null)
+        {
             return new Default.Bool(true);
+        }
         if (context.FALSE() != null)
+        {
             return new Default.Bool(false);
+        }
         if (context.NOTHING() != null)
+        {
             return Default.Nothing.Instance;
+        }
         if (context.STRING_LITERAL() != null)
         {
             var value = Unquote(context.STRING_LITERAL().GetText());

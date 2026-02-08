@@ -473,8 +473,16 @@ public class CompatibilityChecker
 
     private bool DefaultsEqual(Default? default1, Default? default2)
     {
-        if (default1 == null && default2 == null) return true;
-        if (default1 == null || default2 == null) return false;
+        if (default1 == null && default2 == null)
+        {
+            return true;
+        }
+
+        if (default1 == null || default2 == null)
+        {
+            return false;
+        }
+
         return default1.ToString() == default2.ToString();
     }
 }

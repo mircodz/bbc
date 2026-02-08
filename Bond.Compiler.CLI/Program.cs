@@ -151,23 +151,35 @@ class Program
     static async Task<string?> ResolveGitReference(string gitRef, string currentFilePath)
     {
         var parts = gitRef.Split('#');
-        if (parts.Length != 2) return null;
+        if (parts.Length != 2)
+        {
+            return null;
+        }
 
         var refParts = parts[1].Split('=');
-        if (refParts.Length != 2) return null;
+        if (refParts.Length != 2)
+        {
+            return null;
+        }
 
         var refName = refParts[1];
 
         try
         {
             var gitRoot = await RunGitCommand("rev-parse --show-toplevel");
-            if (gitRoot == null) return null;
+            if (gitRoot == null)
+            {
+                return null;
+            }
 
             var fullPath = Path.GetFullPath(currentFilePath);
             var gitRelativePath = Path.GetRelativePath(gitRoot, fullPath).Replace('\\', '/');
 
             var content = await RunGitCommand($"show {refName}:{gitRelativePath}");
-            if (content == null) return null;
+            if (content == null)
+            {
+                return null;
+            }
 
             var tempFile = Path.GetTempFileName();
             var tempBondFile = Path.ChangeExtension(tempFile, ".bond");
@@ -207,11 +219,15 @@ class Program
     {
         var oldResult = await BondParserFacade.ParseFileAsync(oldFilePath);
         if (!oldResult.Success)
+        {
             return OutputParseError(errorFormat, oldResult.Errors, "Failed to parse reference schema", oldFilePath);
+        }
 
         var newResult = await BondParserFacade.ParseFileAsync(newFilePath);
         if (!newResult.Success)
+        {
             return OutputParseError(errorFormat, newResult.Errors, "Failed to parse current schema", newFilePath);
+        }
 
         var checker = new CompatibilityChecker();
         var changes = checker.CheckCompatibility(oldResult.Ast!, newResult.Ast!);
@@ -255,13 +271,6 @@ class Program
     static void WriteError(string message)
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine(message);
-        Console.ResetColor();
-    }
-
-    static void WriteSuccess(string message)
-    {
-        Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine(message);
         Console.ResetColor();
     }

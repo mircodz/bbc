@@ -1,6 +1,5 @@
 using Antlr4.Runtime;
 using Bond.Parser.Grammar;
-using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Parser;
 
@@ -28,15 +27,9 @@ public record ParseResult(
 /// <summary>
 /// Error listener for collecting ANTLR parse errors
 /// </summary>
-public class ErrorListener : IAntlrErrorListener<IToken>
+public class ErrorListener(string? path = null) : IAntlrErrorListener<IToken>
 {
     private readonly List<ParseError> _errors = new();
-    private readonly string? _filePath;
-
-    public ErrorListener(string? filePath = null)
-    {
-        _filePath = filePath;
-    }
 
     public IReadOnlyList<ParseError> Errors => _errors;
 
@@ -49,7 +42,7 @@ public class ErrorListener : IAntlrErrorListener<IToken>
         string msg,
         RecognitionException e)
     {
-        _errors.Add(new ParseError(msg, _filePath, line, charPositionInLine));
+        _errors.Add(new ParseError(msg, path, line, charPositionInLine));
     }
 }
 

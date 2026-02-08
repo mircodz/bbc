@@ -17,8 +17,7 @@ public class SymbolTable
     {
         // Find duplicates in the same namespace
         var duplicates = _declarations
-            .Where(d => d.Name == declaration.Name &&
-                        d.Namespaces.Any(ns1 => currentNamespaces.Any(ns2 => NamespacesMatch(ns1, ns2))))
+            .Where(d => d.Name == declaration.Name && d.Namespaces.Any(ns1 => currentNamespaces.Any(ns2 => NamespacesMatch(ns1, ns2))))
             .ToList();
 
         foreach (var duplicate in duplicates)
@@ -91,11 +90,15 @@ public class SymbolTable
     private static bool NamespacesMatch(Namespace ns1, Namespace ns2)
     {
         if (!ns1.Name.SequenceEqual(ns2.Name))
+        {
             return false;
+        }
 
         // If both specify a language, they must match
         if (ns1.LanguageQualifier.HasValue && ns2.LanguageQualifier.HasValue)
+        {
             return ns1.LanguageQualifier == ns2.LanguageQualifier;
+        }
 
         // If only one specifies a language, they still match (language-agnostic)
         return true;
@@ -121,12 +124,16 @@ public class SymbolTable
     private static bool ParametersMatch(TypeParam[] params1, TypeParam[] params2)
     {
         if (params1.Length != params2.Length)
+        {
             return false;
+        }
 
         for (int i = 0; i < params1.Length; i++)
         {
             if (params1[i].Constraint != params2[i].Constraint)
+            {
                 return false;
+            }
         }
 
         return true;

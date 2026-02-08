@@ -14,7 +14,9 @@ public static class TypeValidator
     public static bool ValidateDefaultValue(BondType fieldType, Default? defaultValue)
     {
         if (defaultValue == null)
+        {
             return true;
+        }
 
         // Maybe/Nullable types can have 'nothing' default
         if (fieldType is BondType.Maybe or BondType.Nullable)
