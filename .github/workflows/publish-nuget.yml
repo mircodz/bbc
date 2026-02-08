@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
   packages: write
 
 jobs:
@@ -41,6 +42,20 @@ jobs:
 
       - name: Pack
         run: dotnet pack $PROJECT -c Release -o $OUT_DIR /p:Version=${{ steps.version.outputs.VERSION }}
+
+      - name: NuGet login
+        id: nuget_login
+        uses: NuGet/login@v1
+        with:
+          server: https://api.nuget.org/v3/index.json
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push "$OUT_DIR"/*.nupkg \
+            --source "https://api.nuget.org/v3/index.json" \
+            --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" \
+            --skip-duplicate
 
       - name: Push to GitHub Packages
         env:
