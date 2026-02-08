@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Bond.Parser.Parser;
 using Bond.Parser.Syntax;
 using FluentAssertions;

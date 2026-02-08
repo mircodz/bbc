@@ -1,6 +1,7 @@
+using System.Linq;
+using System.Threading.Tasks;
 using Bond.Parser.Compatibility;
 using Bond.Parser.Parser;
-using Bond.Parser.Syntax;
 using FluentAssertions;
 
 namespace Bond.Parser.Tests;

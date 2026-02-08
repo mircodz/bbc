@@ -1,3 +1,4 @@
+using System;
 using Bond.Parser.Syntax;
 using Bond.Parser.Util;
 

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Compatibility;

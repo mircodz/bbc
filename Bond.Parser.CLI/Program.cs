@@ -1,11 +1,16 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Bond.Parser.Parser;
 using Bond.Parser.Compatibility;
 using Bond.Parser.Json;
 using System.Text.Json;
+using System.Threading.Tasks;
 
-namespace Bond.Compiler.CLI;
+namespace Bond.Parser.CLI;
 
-class Program
+public static class Program
 {
     static async Task<int> Main(string[] args)
     {
@@ -359,32 +364,32 @@ class Program
         }
     }
 
-    static void PrintDeclarationDetails(Parser.Syntax.Declaration decl)
+    static void PrintDeclarationDetails(Syntax.Declaration decl)
     {
         switch (decl)
         {
-            case Parser.Syntax.StructDeclaration structDecl:
+            case Syntax.StructDeclaration structDecl:
                 foreach (var field in structDecl.Fields)
                 {
                     Console.WriteLine($"  {field.Ordinal}: {field.Modifier} {field.Type} {field.Name}");
                 }
                 break;
 
-            case Parser.Syntax.EnumDeclaration enumDecl:
+            case Syntax.EnumDeclaration enumDecl:
                 foreach (var constant in enumDecl.Constants)
                 {
                     Console.WriteLine($"  {constant}");
                 }
                 break;
 
-            case Parser.Syntax.ServiceDeclaration serviceDecl:
+            case Syntax.ServiceDeclaration serviceDecl:
                 foreach (var method in serviceDecl.Methods)
                 {
                     Console.WriteLine($"  {method}");
                 }
                 break;
 
-            case Parser.Syntax.AliasDeclaration aliasDecl:
+            case Syntax.AliasDeclaration aliasDecl:
                 Console.WriteLine($"  = {aliasDecl.AliasedType}");
                 break;
         }
