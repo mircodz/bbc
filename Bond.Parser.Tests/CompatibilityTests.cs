@@ -11,7 +11,7 @@ public class CompatibilityTests
 
     private async Task<Syntax.Bond> ParseSchema(string input)
     {
-        var result = await BondParserFacade.ParseStringAsync(input);
+        var result = await ParserFacade.ParseStringAsync(input);
         result.Success.Should().BeTrue($"parsing should succeed but got errors: {string.Join(", ", result.Errors.Select(e => e.Message))}");
         return result.Ast!;
     }

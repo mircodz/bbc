@@ -1,3 +1,4 @@
+using System.Numerics;
 using Bond.Parser.Grammar;
 using Bond.Parser.Syntax;
 
@@ -229,9 +230,31 @@ public class AstBuilder : BondBaseVisitor<object?>
     public override Constant VisitEnumConstant(BondParser.EnumConstantContext context)
     {
         var name = (string)Visit(context.identifier())!;
-        var value = context.INTEGER_LITERAL() != null
-            ? (int)ParseInteger(context.INTEGER_LITERAL().GetText())
-            : (int?)null;
+        long? value = null;
+
+        if (context.INTEGER_LITERAL() != null)
+        {
+            var bigIntValue = ParseInteger(context.INTEGER_LITERAL().GetText());
+            var isNegative = context.MINUS() != null;
+            var finalValue = isNegative ? -bigIntValue : bigIntValue;
+
+            // If value fits in int64, use it directly
+            if (finalValue >= long.MinValue && finalValue <= long.MaxValue)
+            {
+                value = (long)finalValue;
+            }
+            // If value is in ulong range but > long.MaxValue, interpret as two's complement
+            else if (finalValue >= 0 && finalValue <= ulong.MaxValue)
+            {
+                // Convert unsigned to signed two's complement
+                value = unchecked((long)(ulong)finalValue);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Enum constant '{name}' value {finalValue} is out of range for int64");
+            }
+        }
 
         return new Constant(name, value);
     }
@@ -383,19 +406,11 @@ public class AstBuilder : BondBaseVisitor<object?>
             ? (Default?)Visit(context.default_())
             : null;
 
-        // Wrap containers and basic types with 'nothing' default in Maybe
-        if (defaultValue is Default.Nothing)
+        // Bond semantics: any non-struct type with default 'nothing' becomes Maybe<T>
+        // (structs are rejected during semantic analysis).
+        if (defaultValue is Default.Nothing && type is not BondType.Maybe)
         {
-            bool canWrap = type is BondType.List or BondType.Vector or BondType.Set or BondType.Map
-                          or BondType.String or BondType.WString or BondType.Bool
-                          or BondType.Int8 or BondType.Int16 or BondType.Int32 or BondType.Int64
-                          or BondType.UInt8 or BondType.UInt16 or BondType.UInt32 or BondType.UInt64
-                          or BondType.Float or BondType.Double;
-
-            if (canWrap)
-            {
-                type = new BondType.Maybe(type);
-            }
+            type = new BondType.Maybe(type);
         }
 
         return new Field(attributes, ordinal, modifier, type, name, defaultValue);
@@ -608,7 +623,15 @@ public class AstBuilder : BondBaseVisitor<object?>
         if (context.INTEGER_LITERAL() != null)
         {
             var value = ParseInteger(context.INTEGER_LITERAL().GetText());
-            return new BondType.IntTypeArg(value);
+
+            // Type arguments must fit in int64
+            if (value < long.MinValue || value > long.MaxValue)
+            {
+                throw new InvalidOperationException(
+                    $"Type argument value {value} is out of range for int64");
+            }
+
+            return new BondType.IntTypeArg((long)value);
         }
 
         throw new InvalidOperationException("Unknown type argument");
@@ -650,15 +673,19 @@ public class AstBuilder : BondBaseVisitor<object?>
             var value = Unquote(context.STRING_LITERAL().GetText());
             return new Default.String(value);
         }
+
+        // Check for optional minus sign
+        var isNegative = context.MINUS() != null;
+
         if (context.FLOAT_LITERAL() != null)
         {
             var value = double.Parse(context.FLOAT_LITERAL().GetText());
-            return new Default.Float(value);
+            return new Default.Float(isNegative ? -value : value);
         }
         if (context.INTEGER_LITERAL() != null)
         {
             var value = ParseInteger(context.INTEGER_LITERAL().GetText());
-            return new Default.Integer(value);
+            return new Default.Integer(isNegative ? -value : value);
         }
         if (context.identifier() != null)
         {
@@ -697,7 +724,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         return str;
     }
 
-    private static long ParseInteger(string str)
+    private static BigInteger ParseInteger(string str)
     {
         bool isNegative = str.StartsWith('-');
         if (isNegative)
@@ -705,18 +732,27 @@ public class AstBuilder : BondBaseVisitor<object?>
             str = str[1..];
         }
 
-        long value;
+        BigInteger value;
         if (str.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
-            value = Convert.ToInt64(str[2..], 16);
+            // Parse hex as unsigned by prepending "0" to ensure positive interpretation
+            var hexDigits = str[2..];
+            // BigInteger.Parse with HexNumber treats high bit as sign bit
+            // Prepend "0" to force positive interpretation
+            value = BigInteger.Parse("0" + hexDigits, System.Globalization.NumberStyles.HexNumber);
         }
         else if (str.StartsWith("0o", StringComparison.OrdinalIgnoreCase))
         {
-            value = Convert.ToInt64(str[2..], 8);
+            // Parse octal manually (BigInteger doesn't have native octal support)
+            value = 0;
+            foreach (char c in str[2..])
+            {
+                value = value * 8 + (c - '0');
+            }
         }
         else
         {
-            value = long.Parse(str);
+            value = BigInteger.Parse(str);
         }
 
         return isNegative ? -value : value;

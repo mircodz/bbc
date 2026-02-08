@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace Bond.Parser.Util;
 
 public static class Extensions
@@ -9,6 +11,27 @@ public static class Extensions
     {
         return value >= Convert.ToInt64(GetMinValue<T>()) &&
                value <= Convert.ToInt64(GetMaxValue<T>());
+    }
+
+    /// <summary>
+    /// Checks if a BigInteger value is within the bounds of a specific integral type
+    /// </summary>
+    public static bool IsInBounds<T>(this BigInteger value) where T : struct
+    {
+        var type = typeof(T);
+
+        if (type == typeof(ulong))
+        {
+            return value >= 0 && value <= ulong.MaxValue;
+        }
+
+        // For signed types, convert their bounds to BigInteger
+        var min = new BigInteger(Convert.ToInt64(GetMinValue<T>()));
+        var max = type == typeof(uint)
+            ? new BigInteger(uint.MaxValue)
+            : new BigInteger(Convert.ToInt64(GetMaxValue<T>()));
+
+        return value >= min && value <= max;
     }
 
     private static object GetMinValue<T>() where T : struct

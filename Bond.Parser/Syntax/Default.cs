@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace Bond.Parser.Syntax;
 
 /// <summary>
@@ -12,7 +14,7 @@ public abstract record Default
         public override string ToString() => Value ? "true" : "false";
     }
 
-    public sealed record Integer(long Value) : Default
+    public sealed record Integer(BigInteger Value) : Default
     {
         public override string ToString() => Value.ToString();
     }

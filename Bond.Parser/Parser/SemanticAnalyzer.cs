@@ -1,4 +1,6 @@
+using Antlr4.Runtime;
 using Bond.Parser.Syntax;
+using Bond.Parser.Grammar;
 
 namespace Bond.Parser.Parser;
 
@@ -47,6 +49,33 @@ public class SemanticAnalyzer
         }
 
         _symbolTable.MarkImportProcessed(canonicalPath);
+        var importAst = ParseContent(content, canonicalPath);
+
+        // Recursively analyze imports in the imported file, reusing the same symbol table
+        var analyzer = new SemanticAnalyzer(_symbolTable, _importResolver, canonicalPath);
+        await analyzer.AnalyzeAsync(importAst);
+    }
+
+    private static Syntax.Bond ParseContent(string content, string filePath)
+    {
+        var inputStream = new AntlrInputStream(content);
+        var lexer = new BondLexer(inputStream);
+        var tokenStream = new CommonTokenStream(lexer);
+        var parser = new BondParser(tokenStream);
+
+        var errorListener = new ErrorListener(filePath);
+        parser.RemoveErrorListeners();
+        parser.AddErrorListener(errorListener);
+
+        var parseTree = parser.bond();
+        if (errorListener.Errors.Count > 0)
+        {
+            var first = errorListener.Errors.First();
+            throw new InvalidOperationException($"{first.Message} (imported from {filePath}:{first.Line}:{first.Column})");
+        }
+
+        var astBuilder = new AstBuilder();
+        return (Syntax.Bond)astBuilder.Visit(parseTree)!;
     }
 
     private void ValidateDeclaration(Declaration declaration, Namespace[] namespaces)
@@ -183,14 +212,30 @@ public class SemanticAnalyzer
 
         TypeValidator.ValidateStructField(field);
 
-        if (field.Type is BondType.UnresolvedUserType unresolved && field.DefaultValue is Default.Nothing)
+        // Structs cannot have default 'nothing' even when wrapped in Maybe
+        if (field.DefaultValue is Default.Nothing)
         {
-            var decl = _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
-            if (decl is StructDeclaration)
+            var underlying = UnwrapMaybe(field.Type);
+            if (IsStructType(underlying, namespaces))
             {
                 throw new InvalidOperationException(
                     $"Struct field '{field.Name}' cannot have default value of 'nothing'");
             }
         }
+    }
+
+    private BondType UnwrapMaybe(BondType type) =>
+        type is BondType.Maybe maybe ? maybe.ElementType : type;
+
+    private bool IsStructType(BondType type, Namespace[] namespaces)
+    {
+        BondType resolved = ResolveAliases(type, namespaces);
+
+        return resolved switch
+        {
+            BondType.UserDefined { Declaration: StructDeclaration or ForwardDeclaration } => true,
+            BondType.UnresolvedUserType unresolved => _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces) is StructDeclaration,
+            _ => false
+        };
     }
 }

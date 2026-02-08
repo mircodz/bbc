@@ -25,31 +25,9 @@ public record ParseResult(
 }
 
 /// <summary>
-/// Error listener for collecting ANTLR parse errors
-/// </summary>
-public class ErrorListener(string? path = null) : IAntlrErrorListener<IToken>
-{
-    private readonly List<ParseError> _errors = new();
-
-    public IReadOnlyList<ParseError> Errors => _errors;
-
-    public void SyntaxError(
-        TextWriter output,
-        IRecognizer recognizer,
-        IToken offendingSymbol,
-        int line,
-        int charPositionInLine,
-        string msg,
-        RecognitionException e)
-    {
-        _errors.Add(new ParseError(msg, path, line, charPositionInLine));
-    }
-}
-
-/// <summary>
 /// Main facade for parsing Bond files
 /// </summary>
-public static class BondParserFacade
+public static class ParserFacade
 {
     /// <summary>
     /// Parses a Bond file from a file path
@@ -61,12 +39,7 @@ public static class BondParserFacade
     {
         if (!File.Exists(filePath))
         {
-            return new ParseResult(
-                null,
-                new List<ParseError>
-                {
-                    new ParseError($"File not found: {filePath}", filePath, 0, 0)
-                });
+            return new ParseResult(null, [new ParseError($"File not found: {filePath}", filePath, 0, 0)]);
         }
 
         var content = await File.ReadAllTextAsync(filePath, cancellationToken);
@@ -86,7 +59,7 @@ public static class BondParserFacade
     /// <summary>
     /// Parses Bond content from a string
     /// </summary>
-    public static async Task<ParseResult> ParseContentAsync(
+    private static async Task<ParseResult> ParseContentAsync(
         string content,
         string filePath,
         ImportResolver importResolver)
@@ -95,21 +68,16 @@ public static class BondParserFacade
 
         try
         {
-            // Create ANTLR lexer and parser
             var inputStream = new AntlrInputStream(content);
             var lexer = new BondLexer(inputStream);
             var tokenStream = new CommonTokenStream(lexer);
             var parser = new BondParser(tokenStream);
 
-            // Add error listener
             var errorListener = new ErrorListener(filePath);
             parser.RemoveErrorListeners();
             parser.AddErrorListener(errorListener);
 
-            // Parse
             var parseTree = parser.bond();
-
-            // Check for parse errors
             if (errorListener.Errors.Count > 0)
             {
                 return new ParseResult(null, errorListener.Errors.ToList());
@@ -130,6 +98,18 @@ public static class BondParserFacade
             catch (Exception ex)
             {
                 errors.Add(new ParseError(ex.Message, filePath, 0, 0));
+                return new ParseResult(ast, errors);
+            }
+
+            // Resolve types
+            try
+            {
+                var typeResolver = new TypeResolver(symbolTable);
+                ast = typeResolver.ResolveTypes(ast);
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new ParseError($"Type resolution failed: {ex.Message}", filePath, 0, 0));
                 return new ParseResult(ast, errors);
             }
 

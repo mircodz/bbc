@@ -65,7 +65,7 @@ enum
     ;
 
 enumConstant
-    : identifier (EQUAL INTEGER_LITERAL)?
+    : identifier (EQUAL MINUS? INTEGER_LITERAL)?
     ;
 
 service
@@ -200,8 +200,8 @@ default_
     | NOTHING
     | L? STRING_LITERAL
     | identifier
-    | FLOAT_LITERAL
-    | INTEGER_LITERAL
+    | (MINUS | PLUS)? FLOAT_LITERAL
+    | (MINUS | PLUS)? INTEGER_LITERAL
     ;
 
 attributes
@@ -294,6 +294,8 @@ COLON : ':';
 COMMA : ',';
 DOT : '.';
 EQUAL : '=';
+MINUS : '-';
+PLUS : '+';
 L : 'L';
 
 // Identifiers
@@ -303,14 +305,14 @@ IDENTIFIER
 
 // Literals
 INTEGER_LITERAL
-    : [+-]? [0-9]+
-    | [+-]? '0x' [0-9a-fA-F]+
-    | [+-]? '0o' [0-7]+
+    : [0-9]+
+    | '0x' [0-9a-fA-F]+
+    | '0o' [0-7]+
     ;
 
 FLOAT_LITERAL
-    : [+-]? [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)?
-    | [+-]? [0-9]+ [eE] [+-]? [0-9]+
+    : [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)?
+    | [0-9]+ [eE] [+-]? [0-9]+
     ;
 
 STRING_LITERAL

@@ -7,8 +7,8 @@ namespace Bond.Parser.Parser;
 /// </summary>
 public class SymbolTable
 {
-    private readonly List<Declaration> _declarations = new();
-    private readonly HashSet<string> _processedImports = new();
+    private readonly List<Declaration> _declarations = [];
+    private readonly HashSet<string> _processedImports = [];
 
     /// <summary>
     /// Adds a declaration to the symbol table with duplicate checking
@@ -86,6 +86,15 @@ public class SymbolTable
     /// Gets all declarations
     /// </summary>
     public IReadOnlyList<Declaration> Declarations => _declarations.AsReadOnly();
+
+    /// <summary>
+    /// Clears all declarations from the symbol table
+    /// </summary>
+    public void Clear()
+    {
+        _declarations.Clear();
+        // Don't clear processed imports as those are still valid
+    }
 
     private static bool NamespacesMatch(Namespace ns1, Namespace ns2)
     {

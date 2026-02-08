@@ -39,7 +39,7 @@ public static class TypeValidator
             (BondType.UInt8, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<byte>(),
             (BondType.UInt16, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<ushort>(),
             (BondType.UInt32, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<uint>(),
-            (BondType.UInt64, Default.Integer i) => i.Value >= 0,
+            (BondType.UInt64, Default.Integer i) => ValidateUInt64(i.Value),
             (BondType.Float, Default.Float) => true,
             (BondType.Float, Default.Integer) => true, // Can convert int to float
             (BondType.Double, Default.Float) => true,
@@ -48,11 +48,13 @@ public static class TypeValidator
             (BondType.String, Default.String) => true,
             (BondType.WString, Default.String) => true,
             (BondType.UserDefined { Declaration: EnumDeclaration }, Default.Enum) => true,
+            (BondType.UserDefined { Declaration: EnumDeclaration }, Default.Nothing) => true,
             (BondType.UnresolvedUserType, Default.Enum) => true,
             (BondType.UnresolvedUserType, Default.String) => true,
             (BondType.UnresolvedUserType, Default.Integer) => true,
             (BondType.UnresolvedUserType, Default.Float) => true,
             (BondType.UnresolvedUserType, Default.Bool) => true,
+            (BondType.UnresolvedUserType, Default.Nothing) => true,
             (BondType.TypeParameter, _) => true,
             _ => false
         };
@@ -97,5 +99,10 @@ public static class TypeValidator
             throw new InvalidOperationException(
                 $"Struct field '{field.Name}' cannot have default value of 'nothing'");
         }
+    }
+
+    private static bool ValidateUInt64(System.Numerics.BigInteger value)
+    {
+        return value >= 0 && value.IsInBounds<ulong>();
     }
 }

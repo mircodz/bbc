@@ -9,6 +9,7 @@
     <Title>Bond IDL Parser</Title>
     <PackageId>Bond.Parser</PackageId>
     <NoWarn>CS1584,CS1658,CS1591</NoWarn>
+    <RootNamespace>Bond.Parser</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -13,7 +13,7 @@ public sealed record EnumDeclaration : Declaration
     // Enums don't have type parameters, so set to empty array
     public EnumDeclaration()
     {
-        TypeParameters = Array.Empty<TypeParam>();
+        TypeParameters = [];
     }
 
     public override string ToString() => $"enum {Name}";

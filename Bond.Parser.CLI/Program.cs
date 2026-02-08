@@ -1,5 +1,6 @@
 using Bond.Parser.Parser;
 using Bond.Parser.Compatibility;
+using Bond.Parser.Json;
 using System.Text.Json;
 
 namespace Bond.Compiler.CLI;
@@ -38,6 +39,7 @@ class Program
         Console.WriteLine();
         Console.WriteLine("Parse Options:");
         Console.WriteLine("  -v, --verbose              Show detailed AST output");
+        Console.WriteLine("  --json                     Output AST as JSON (Bond schema format)");
         Console.WriteLine();
         Console.WriteLine("Breaking Options:");
         Console.WriteLine("  --against <reference>      Reference schema to compare against (file path or .git#branch=name)");
@@ -63,8 +65,9 @@ class Program
 
         var filePath = args[0];
         var verbose = args.Contains("--verbose") || args.Contains("-v");
+        var jsonOutput = args.Contains("--json");
 
-        var result = await BondParserFacade.ParseFileAsync(filePath);
+        var result = await ParserFacade.ParseFileAsync(filePath);
 
         if (!result.Success)
         {
@@ -82,7 +85,14 @@ class Program
 
         if (result.Ast != null)
         {
-            PrintSummary(result.Ast, filePath, verbose);
+            if (jsonOutput)
+            {
+                PrintJson(result.Ast);
+            }
+            else
+            {
+                PrintSummary(result.Ast, filePath, verbose);
+            }
         }
 
         return 0;
@@ -217,13 +227,13 @@ class Program
 
     static async Task<int> CheckBreaking(string oldFilePath, string newFilePath, string errorFormat)
     {
-        var oldResult = await BondParserFacade.ParseFileAsync(oldFilePath);
+        var oldResult = await ParserFacade.ParseFileAsync(oldFilePath);
         if (!oldResult.Success)
         {
             return OutputParseError(errorFormat, oldResult.Errors, "Failed to parse reference schema", oldFilePath);
         }
 
-        var newResult = await BondParserFacade.ParseFileAsync(newFilePath);
+        var newResult = await ParserFacade.ParseFileAsync(newFilePath);
         if (!newResult.Success)
         {
             return OutputParseError(errorFormat, newResult.Errors, "Failed to parse current schema", newFilePath);
@@ -317,6 +327,13 @@ class Program
         });
     }
 
+    static void PrintJson(Bond.Parser.Syntax.Bond ast)
+    {
+        var options = BondJsonSerializerOptions.GetOptions();
+        var json = JsonSerializer.Serialize(ast, options);
+        Console.WriteLine(json);
+    }
+
     static void PrintSummary(Bond.Parser.Syntax.Bond ast, string filePath, bool verbose)
     {
         Console.WriteLine($"parse: {filePath}");
@@ -342,32 +359,32 @@ class Program
         }
     }
 
-    static void PrintDeclarationDetails(Bond.Parser.Syntax.Declaration decl)
+    static void PrintDeclarationDetails(Parser.Syntax.Declaration decl)
     {
         switch (decl)
         {
-            case Bond.Parser.Syntax.StructDeclaration structDecl:
+            case Parser.Syntax.StructDeclaration structDecl:
                 foreach (var field in structDecl.Fields)
                 {
                     Console.WriteLine($"  {field.Ordinal}: {field.Modifier} {field.Type} {field.Name}");
                 }
                 break;
 
-            case Bond.Parser.Syntax.EnumDeclaration enumDecl:
+            case Parser.Syntax.EnumDeclaration enumDecl:
                 foreach (var constant in enumDecl.Constants)
                 {
                     Console.WriteLine($"  {constant}");
                 }
                 break;
 
-            case Bond.Parser.Syntax.ServiceDeclaration serviceDecl:
+            case Parser.Syntax.ServiceDeclaration serviceDecl:
                 foreach (var method in serviceDecl.Methods)
                 {
                     Console.WriteLine($"  {method}");
                 }
                 break;
 
-            case Bond.Parser.Syntax.AliasDeclaration aliasDecl:
+            case Parser.Syntax.AliasDeclaration aliasDecl:
                 Console.WriteLine($"  = {aliasDecl.AliasedType}");
                 break;
         }
