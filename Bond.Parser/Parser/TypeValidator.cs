@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using Bond.Parser.Syntax;
 using Bond.Parser.Util;
 
@@ -40,7 +41,7 @@ public static class TypeValidator
             (BondType.UInt8, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<byte>(),
             (BondType.UInt16, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<ushort>(),
             (BondType.UInt32, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<uint>(),
-            (BondType.UInt64, Default.Integer i) => ValidateUInt64(i.Value),
+            (BondType.UInt64, Default.Integer i) => i.Value >= 0 && i.Value.IsInBounds<ulong>(),
             (BondType.Float, Default.Float) => true,
             (BondType.Float, Default.Integer) => true, // Can convert int to float
             (BondType.Double, Default.Float) => true,
@@ -100,10 +101,5 @@ public static class TypeValidator
             throw new InvalidOperationException(
                 $"Struct field '{field.Name}' cannot have default value of 'nothing'");
         }
-    }
-
-    private static bool ValidateUInt64(System.Numerics.BigInteger value)
-    {
-        return value >= 0 && value.IsInBounds<ulong>();
     }
 }
