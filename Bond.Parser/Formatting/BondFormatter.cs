@@ -59,6 +59,7 @@ public static class BondFormatter
             BondLexer.RPAREN,
             BondLexer.RBRACKET,
             BondLexer.RANGLE,
+            BondLexer.LANGLE,
             BondLexer.DOT,
             BondLexer.COLON,
             BondLexer.RBRACE
@@ -120,7 +121,12 @@ public static class BondFormatter
                 WriteNewline();
             }
 
-            return _builder.ToString();
+            var text = _builder.ToString();
+            if (text.EndsWith('\n'))
+            {
+                text = text[..^1];
+            }
+            return text;
         }
 
         private void ProcessHiddenTokens(IToken token)
@@ -197,12 +203,18 @@ public static class BondFormatter
             {
                 WriteNewline();
                 _indentLevel++;
+                UpdateTopLevelKeyword(token.Type);
                 return;
             }
 
             if (token.Type == BondLexer.SEMI)
             {
+                if (_indentLevel == 0)
+                {
+                    _pendingTopLevelBlankLine = true;
+                }
                 WriteNewline();
+                UpdateTopLevelKeyword(token.Type);
                 return;
             }
 
@@ -211,6 +223,7 @@ public static class BondFormatter
                 if (nextType == BondLexer.SEMI)
                 {
                     _pendingSpace = false;
+                    UpdateTopLevelKeyword(token.Type);
                     return;
                 }
                 if (_indentLevel == 0)
@@ -218,19 +231,21 @@ public static class BondFormatter
                     _pendingTopLevelBlankLine = true;
                 }
                 WriteNewline();
+                UpdateTopLevelKeyword(token.Type);
                 return;
             }
 
-            if (token.Type == BondLexer.SEMI && _indentLevel == 0)
-            {
-                _pendingTopLevelBlankLine = true;
-            }
+            UpdateTopLevelKeyword(token.Type);
         }
 
         private void ApplyTopLevelSpacingIfNeeded(int tokenType)
         {
             if (!_pendingTopLevelBlankLine)
             {
+                if (tokenType == BondLexer.NAMESPACE && _lastTopLevelKeyword == BondLexer.IMPORT)
+                {
+                    EnsureBlankLine();
+                }
                 return;
             }
 
@@ -240,8 +255,6 @@ public static class BondFormatter
             }
 
             var previous = _lastTopLevelKeyword;
-            _lastTopLevelKeyword = tokenType;
-
             _pendingTopLevelBlankLine = false;
 
             if (previous == BondLexer.IMPORT && tokenType == BondLexer.IMPORT)
@@ -250,6 +263,19 @@ public static class BondFormatter
             }
 
             EnsureBlankLine();
+        }
+
+        private void UpdateTopLevelKeyword(int tokenType)
+        {
+            if (_indentLevel != 0)
+            {
+                return;
+            }
+
+            if (TopLevelStartTokens.Contains(tokenType))
+            {
+                _lastTopLevelKeyword = tokenType;
+            }
         }
 
         private bool ShouldSetPendingSpace(int type)
