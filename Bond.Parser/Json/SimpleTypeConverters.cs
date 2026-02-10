@@ -10,7 +10,7 @@ namespace Bond.Parser.Json;
 /// </summary>
 public class AttributeJsonConverter : JsonConverter<Syntax.Attribute>
 {
-    public override Syntax.Attribute? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Syntax.Attribute Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }
@@ -34,7 +34,7 @@ public class AttributeJsonConverter : JsonConverter<Syntax.Attribute>
 /// </summary>
 public class NamespaceJsonConverter : JsonConverter<Namespace>
 {
-    public override Namespace? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Namespace Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }
@@ -61,7 +61,7 @@ public class NamespaceJsonConverter : JsonConverter<Namespace>
 /// </summary>
 public class TypeParamJsonConverter : JsonConverter<TypeParam>
 {
-    public override TypeParam? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override TypeParam Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }
@@ -97,7 +97,7 @@ public class TypeParamJsonConverter : JsonConverter<TypeParam>
 /// </summary>
 public class ConstantJsonConverter : JsonConverter<Constant>
 {
-    public override Constant? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Constant Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }
@@ -128,7 +128,7 @@ public class ConstantJsonConverter : JsonConverter<Constant>
 /// </summary>
 public class ImportJsonConverter : JsonConverter<Import>
 {
-    public override Import? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Import Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }

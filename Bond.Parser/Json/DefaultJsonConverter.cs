@@ -10,7 +10,7 @@ namespace Bond.Parser.Json;
 /// </summary>
 public class DefaultJsonConverter : JsonConverter<Default>
 {
-    public override Default? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Default Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }

@@ -153,7 +153,6 @@ public class TypeResolver(SymbolTable symbolTable)
         {
             MethodType.Unary unary => new MethodType.Unary(ResolveType(unary.Type, namespaces)),
             MethodType.Streaming streaming => new MethodType.Streaming(ResolveType(streaming.Type, namespaces)),
-            MethodType.Void => methodType,
             _ => methodType
         };
     }

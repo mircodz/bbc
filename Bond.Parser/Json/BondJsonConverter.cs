@@ -9,7 +9,7 @@ namespace Bond.Parser.Json;
 /// </summary>
 public class BondJsonConverter : JsonConverter<Syntax.Bond>
 {
-    public override Syntax.Bond? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Syntax.Bond Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }

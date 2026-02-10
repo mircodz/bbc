@@ -10,7 +10,7 @@ namespace Bond.Parser.Json;
 /// </summary>
 public class MethodTypeJsonConverter : JsonConverter<MethodType>
 {
-    public override MethodType? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override MethodType Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }
@@ -42,7 +42,7 @@ public class MethodTypeJsonConverter : JsonConverter<MethodType>
 /// </summary>
 public class MethodJsonConverter : JsonConverter<Method>
 {
-    public override Method? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Method Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }
