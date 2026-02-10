@@ -198,7 +198,34 @@ public class FormatterTests
             namespace Test
 
             enum Color {
-                red, green
+                red,
+                green
+            }
+            """);
+
+        var result = BondFormatter.Format(input, "<inline>");
+
+        result.Success.Should().BeTrue();
+        result.FormattedText.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Format_EnumValuesOnNewLines()
+    {
+        var input = TrimEol("""
+            namespace Test
+            enum Consts { Zero, One, Three = 3, Four, Six = 6 }
+            """);
+
+        var expected = TrimEol("""
+            namespace Test
+
+            enum Consts {
+                Zero,
+                One,
+                Three = 3,
+                Four,
+                Six = 6
             }
             """);
 

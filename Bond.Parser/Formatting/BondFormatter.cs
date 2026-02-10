@@ -265,6 +265,10 @@ public static class BondFormatter
                 _lastToken = token;
                 return;
             }
+            if ((token.Type == BondLexer.COMMA || token.Type == BondLexer.SEMI) && IsInsideEnumBlock())
+            {
+                WriteNewline();
+            }
             if (token.Type == BondLexer.NAMESPACE && _indentLevel == 0)
             {
                 _pendingTopLevelBlankLine = true;
@@ -486,6 +490,11 @@ public static class BondFormatter
                 BondLexer.VIEW_OF => BondLexer.VIEW_OF,
                 _ => null
             };
+        }
+
+        private bool IsInsideEnumBlock()
+        {
+            return _blockStack.Count > 0 && _blockStack.Peek() == BondLexer.ENUM;
         }
     }
 }
