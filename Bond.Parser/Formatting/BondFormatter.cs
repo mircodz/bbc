@@ -60,6 +60,7 @@ public static class BondFormatter
             BondLexer.RBRACKET,
             BondLexer.RANGLE,
             BondLexer.LANGLE,
+            BondLexer.LPAREN,
             BondLexer.DOT,
             BondLexer.COLON,
             BondLexer.RBRACE
@@ -69,10 +70,12 @@ public static class BondFormatter
         [
             BondLexer.LPAREN,
             BondLexer.LBRACKET,
+            BondLexer.RBRACKET,
             BondLexer.LANGLE,
             BondLexer.DOT,
             BondLexer.MINUS,
-            BondLexer.PLUS
+            BondLexer.PLUS,
+            BondLexer.L
         ];
 
         private static readonly HashSet<int> TopLevelStartTokens =
@@ -83,7 +86,8 @@ public static class BondFormatter
             BondLexer.STRUCT,
             BondLexer.ENUM,
             BondLexer.SERVICE,
-            BondLexer.VIEW_OF
+            BondLexer.VIEW_OF,
+            BondLexer.LBRACKET
         ];
 
         private readonly CommonTokenStream _tokenStream;
@@ -95,6 +99,12 @@ public static class BondFormatter
         private int _indentLevel;
         private bool _pendingTopLevelBlankLine;
         private int? _lastTopLevelKeyword;
+        private bool _inTypeHeader;
+        private int? _pendingBlockKind;
+        private readonly Stack<int?> _blockStack = new();
+        private IToken? _lastToken;
+        private bool _skipNextRBrace;
+        private bool _skipNextSemi;
 
         public TokenFormatter(CommonTokenStream tokenStream, FormatOptions options)
         {
@@ -111,6 +121,24 @@ public static class BondFormatter
             {
                 var token = _defaultTokens[i];
                 var nextType = i + 1 < _defaultTokens.Count ? _defaultTokens[i + 1].Type : TokenConstants.EOF;
+
+                if (_skipNextRBrace && token.Type == BondLexer.RBRACE)
+                {
+                    _skipNextRBrace = false;
+                    if (nextType == BondLexer.SEMI)
+                    {
+                        _skipNextSemi = true;
+                    }
+                    _lastToken = token;
+                    continue;
+                }
+                if (_skipNextSemi && token.Type == BondLexer.SEMI)
+                {
+                    ProcessHiddenTokens(token);
+                    _skipNextSemi = false;
+                    _lastToken = token;
+                    continue;
+                }
 
                 ProcessHiddenTokens(token);
                 WriteToken(token, nextType);
@@ -141,16 +169,39 @@ public static class BondFormatter
             {
                 if (ht.Type == BondLexer.WS)
                 {
-                    var newlines = CountNewlines(ht.Text);
-                    if (newlines > 0)
-                    {
-                        WriteNewline();
-                    }
                     continue;
                 }
 
                 if (ht.Type == BondLexer.LINE_COMMENT || ht.Type == BondLexer.COMMENT)
                 {
+                    var inlineBefore = ht.Type == BondLexer.COMMENT && ht.Line == token.Line;
+                    var inlineAfter = _lastToken != null && ht.Line == _lastToken.Line;
+
+                    if (inlineBefore || inlineAfter)
+                    {
+                        if (_atLineStart)
+                        {
+                            WriteIndent();
+                        }
+                        else
+                        {
+                            _builder.Append(' ');
+                        }
+
+                        _builder.Append(ht.Text.TrimEnd());
+
+                        if (ht.Type == BondLexer.LINE_COMMENT)
+                        {
+                            WriteNewline();
+                        }
+                        else
+                        {
+                            _pendingSpace = true;
+                        }
+
+                        continue;
+                    }
+
                     if (_pendingTopLevelBlankLine && _indentLevel == 0)
                     {
                         _pendingTopLevelBlankLine = false;
@@ -173,6 +224,18 @@ public static class BondFormatter
         {
             ApplyTopLevelSpacingIfNeeded(token.Type);
 
+            int? closingBlockKind = null;
+            if (StartsTypeHeader(token.Type))
+            {
+                _inTypeHeader = _indentLevel == 0;
+            }
+
+            var declaredBlockKind = GetBlockKind(token.Type);
+            if (declaredBlockKind.HasValue)
+            {
+                _pendingBlockKind = declaredBlockKind;
+            }
+
             if (token.Type == BondLexer.RBRACE)
             {
                 if (!_atLineStart)
@@ -180,13 +243,14 @@ public static class BondFormatter
                     WriteNewline();
                 }
                 _indentLevel = Math.Max(0, _indentLevel - 1);
+                closingBlockKind = _blockStack.Count > 0 ? _blockStack.Pop() : null;
             }
 
             if (_atLineStart)
             {
                 WriteIndent();
             }
-            else if (_pendingSpace && !NoSpaceBefore.Contains(token.Type))
+            else if (_pendingSpace && (!NoSpaceBefore.Contains(token.Type) || (token.Type == BondLexer.COLON && _inTypeHeader)))
             {
                 _builder.Append(' ');
             }
@@ -194,6 +258,17 @@ public static class BondFormatter
             _builder.Append(token.Text);
             _pendingSpace = ShouldSetPendingSpace(token.Type);
 
+            if (token.Type == BondLexer.RBRACKET)
+            {
+                WriteNewline();
+                UpdateTopLevelKeyword(token.Type);
+                _lastToken = token;
+                return;
+            }
+            if ((token.Type == BondLexer.COMMA || token.Type == BondLexer.SEMI) && IsInsideEnumBlock())
+            {
+                WriteNewline();
+            }
             if (token.Type == BondLexer.NAMESPACE && _indentLevel == 0)
             {
                 _pendingTopLevelBlankLine = true;
@@ -201,9 +276,25 @@ public static class BondFormatter
 
             if (token.Type == BondLexer.LBRACE)
             {
+                var blockKind = _pendingBlockKind;
+                _pendingBlockKind = null;
+                if (blockKind == BondLexer.STRUCT && IsEmptyBlock(token, nextType))
+                {
+                    _builder.Append('}');
+                    _skipNextRBrace = true;
+                    WriteNewline();
+                    _pendingTopLevelBlankLine |= _indentLevel == 0;
+                    _inTypeHeader = false;
+                    _lastToken = token;
+                    return;
+                }
+
                 WriteNewline();
+                _blockStack.Push(blockKind);
                 _indentLevel++;
+                _inTypeHeader = false;
                 UpdateTopLevelKeyword(token.Type);
+                _lastToken = token;
                 return;
             }
 
@@ -214,35 +305,41 @@ public static class BondFormatter
                     _pendingTopLevelBlankLine = true;
                 }
                 WriteNewline();
+                _inTypeHeader = false;
                 UpdateTopLevelKeyword(token.Type);
+                _lastToken = token;
                 return;
             }
 
             if (token.Type == BondLexer.RBRACE)
             {
-                if (nextType == BondLexer.SEMI)
+                if (nextType == BondLexer.SEMI && (closingBlockKind == BondLexer.STRUCT || closingBlockKind == BondLexer.ENUM))
                 {
                     _pendingSpace = false;
-                    UpdateTopLevelKeyword(token.Type);
-                    return;
+                    _skipNextSemi = true;
                 }
                 if (_indentLevel == 0)
                 {
                     _pendingTopLevelBlankLine = true;
                 }
                 WriteNewline();
+                _inTypeHeader = false;
                 UpdateTopLevelKeyword(token.Type);
+                _lastToken = token;
                 return;
             }
 
             UpdateTopLevelKeyword(token.Type);
+            _lastToken = token;
         }
 
         private void ApplyTopLevelSpacingIfNeeded(int tokenType)
         {
             if (!_pendingTopLevelBlankLine)
             {
-                if (tokenType == BondLexer.NAMESPACE && _lastTopLevelKeyword == BondLexer.IMPORT)
+                if (_lastTopLevelKeyword == BondLexer.IMPORT
+                    && tokenType != BondLexer.IMPORT
+                    && TopLevelStartTokens.Contains(tokenType))
                 {
                     EnsureBlankLine();
                 }
@@ -258,6 +355,10 @@ public static class BondFormatter
             _pendingTopLevelBlankLine = false;
 
             if (previous == BondLexer.IMPORT && tokenType == BondLexer.IMPORT)
+            {
+                return;
+            }
+            if (previous == BondLexer.USING && tokenType == BondLexer.USING)
             {
                 return;
             }
@@ -286,6 +387,30 @@ public static class BondFormatter
             }
 
             return !NoSpaceAfter.Contains(type);
+        }
+
+        private bool IsEmptyBlock(IToken token, int nextType)
+        {
+            if (nextType != BondLexer.RBRACE)
+            {
+                return false;
+            }
+
+            var hidden = _tokenStream.GetHiddenTokensToRight(token.TokenIndex);
+            if (hidden == null)
+            {
+                return true;
+            }
+
+            foreach (var ht in hidden)
+            {
+                if (ht.Type == BondLexer.LINE_COMMENT || ht.Type == BondLexer.COMMENT)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private void WriteIndent()
@@ -350,22 +475,26 @@ public static class BondFormatter
             return count;
         }
 
-        private static int CountNewlines(string? text)
+        private static bool StartsTypeHeader(int tokenType)
         {
-            if (string.IsNullOrEmpty(text))
-            {
-                return 0;
-            }
+            return tokenType is BondLexer.STRUCT or BondLexer.SERVICE;
+        }
 
-            var count = 0;
-            foreach (var ch in text)
+        private static int? GetBlockKind(int tokenType)
+        {
+            return tokenType switch
             {
-                if (ch == '\n')
-                {
-                    count++;
-                }
-            }
-            return count;
+                BondLexer.STRUCT => BondLexer.STRUCT,
+                BondLexer.ENUM => BondLexer.ENUM,
+                BondLexer.SERVICE => BondLexer.SERVICE,
+                BondLexer.VIEW_OF => BondLexer.VIEW_OF,
+                _ => null
+            };
+        }
+
+        private bool IsInsideEnumBlock()
+        {
+            return _blockStack.Count > 0 && _blockStack.Peek() == BondLexer.ENUM;
         }
     }
 }
