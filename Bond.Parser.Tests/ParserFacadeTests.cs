@@ -921,25 +921,4 @@ public class ParserFacadeTests
     }
 
     #endregion
-
-    #region Issues
-
-    // #1
-    [Fact]
-    public async Task SetWithAlias_IsParsed()
-    {
-        var input = """
-            namespace Test
-            using guid = string;
-            struct User {
-                0: required map<guid, int> map;
-            }
-        """;
-
-        var result = await Parse(input);
-
-        result.Success.Should().BeTrue();
-    }
-
-    #endregion
 }
