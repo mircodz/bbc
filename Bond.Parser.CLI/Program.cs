@@ -45,10 +45,12 @@ public static class Program
         Console.WriteLine("Parse Options:");
         Console.WriteLine("  -v, --verbose              Show detailed AST output");
         Console.WriteLine("  --json                     Output AST as JSON (Bond schema format)");
+        Console.WriteLine("  --ignore-imports           Parse without resolving imports or types");
         Console.WriteLine();
         Console.WriteLine("Breaking Options:");
         Console.WriteLine("  --against <reference>      Reference schema to compare against (file path or .git#branch=name)");
         Console.WriteLine("  --error-format <format>    Output format: text, json (default: text)");
+        Console.WriteLine("  --ignore-imports           Compare without resolving imports or types");
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  bbc parse schema.bond");
@@ -71,8 +73,10 @@ public static class Program
         var filePath = args[0];
         var verbose = args.Contains("--verbose") || args.Contains("-v");
         var jsonOutput = args.Contains("--json");
+        var ignoreImports = args.Contains("--ignore-imports");
 
-        var result = await ParserFacade.ParseFileAsync(filePath);
+        var parseOptions = new ParseOptions(IgnoreImports: ignoreImports);
+        var result = await ParserFacade.ParseFileAsync(filePath, options: parseOptions);
 
         if (!result.Success)
         {
@@ -116,6 +120,7 @@ public static class Program
         var againstIndex = Array.FindIndex(args, a => a == "--against");
         var formatIndex = Array.FindIndex(args, a => a.StartsWith("--error-format"));
         var verbose = args.Contains("-v") || args.Contains("--verbose");
+        var ignoreImports = args.Contains("--ignore-imports");
 
         if (againstIndex < 0 || againstIndex + 1 >= args.Length)
         {
@@ -139,17 +144,22 @@ public static class Program
             }
         }
 
-        var referenceFile = await ResolveReference(against, filePath);
-        if (referenceFile == null)
+        var reference = await ResolveReference(against, filePath);
+        if (reference == null)
         {
             WriteError($"Error: Could not resolve reference: {against}");
             return 1;
         }
 
-        return await CheckBreaking(referenceFile, filePath, errorFormat, verbose);
+        return await CheckBreaking(reference, filePath, errorFormat, verbose, ignoreImports);
     }
 
-    static async Task<string?> ResolveReference(string reference, string currentFilePath)
+    private sealed record ResolvedReference(
+        string FilePath,
+        string? Content,
+        ImportResolver? ImportResolver);
+
+    static async Task<ResolvedReference?> ResolveReference(string reference, string currentFilePath)
     {
         if (reference.StartsWith(".git#"))
         {
@@ -158,13 +168,13 @@ public static class Program
 
         if (File.Exists(reference))
         {
-            return reference;
+            return new ResolvedReference(Path.GetFullPath(reference), null, null);
         }
 
         return null;
     }
 
-    static async Task<string?> ResolveGitReference(string gitRef, string currentFilePath)
+    static async Task<ResolvedReference?> ResolveGitReference(string gitRef, string currentFilePath)
     {
         var parts = gitRef.Split('#');
         if (parts.Length != 2)
@@ -190,18 +200,20 @@ public static class Program
 
             var fullPath = Path.GetFullPath(currentFilePath);
             var gitRelativePath = Path.GetRelativePath(gitRoot, fullPath).Replace('\\', '/');
+            if (gitRelativePath.StartsWith("..") || Path.IsPathRooted(gitRelativePath))
+            {
+                return null;
+            }
 
-            var content = await RunGitCommand($"show {refName}:{gitRelativePath}");
+            var content = await RunGitCommand($"show {refName}:{gitRelativePath}", gitRoot);
             if (content == null)
             {
                 return null;
             }
 
-            var tempFile = Path.GetTempFileName();
-            var tempBondFile = Path.ChangeExtension(tempFile, ".bond");
-            await File.WriteAllTextAsync(tempBondFile, content);
-
-            return tempBondFile;
+            var virtualPath = Path.GetFullPath(Path.Combine(gitRoot, gitRelativePath));
+            var importResolver = CreateGitAwareImportResolver(gitRoot, refName);
+            return new ResolvedReference(virtualPath, content, importResolver);
         }
         catch
         {
@@ -209,7 +221,7 @@ public static class Program
         }
     }
 
-    static async Task<string?> RunGitCommand(string arguments)
+    static async Task<string?> RunGitCommand(string arguments, string? workingDirectory = null)
     {
         var process = new System.Diagnostics.Process
         {
@@ -220,6 +232,7 @@ public static class Program
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
+                WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
                 CreateNoWindow = true
             }
         };
@@ -231,15 +244,32 @@ public static class Program
         return process.ExitCode == 0 ? output.Trim() : null;
     }
 
-    static async Task<int> CheckBreaking(string oldFilePath, string newFilePath, string errorFormat, bool verbose)
+    static async Task<int> CheckBreaking(ResolvedReference oldSchema, string newFilePath, string errorFormat, bool verbose, bool ignoreImports)
     {
-        var oldResult = await ParserFacade.ParseFileAsync(oldFilePath);
+        var parseOptions = new ParseOptions(IgnoreImports: ignoreImports);
+        ParseResult oldResult;
+        if (oldSchema.Content != null)
+        {
+            oldResult = await ParserFacade.ParseContentAsync(
+                oldSchema.Content,
+                oldSchema.FilePath,
+                oldSchema.ImportResolver,
+                parseOptions);
+        }
+        else
+        {
+            oldResult = await ParserFacade.ParseFileAsync(
+                oldSchema.FilePath,
+                oldSchema.ImportResolver,
+                default,
+                parseOptions);
+        }
         if (!oldResult.Success)
         {
-            return OutputParseError(errorFormat, oldResult.Errors, "Failed to parse reference schema", oldFilePath);
+            return OutputParseError(errorFormat, oldResult.Errors, "Failed to parse reference schema", oldSchema.FilePath);
         }
 
-        var newResult = await ParserFacade.ParseFileAsync(newFilePath);
+        var newResult = await ParserFacade.ParseFileAsync(newFilePath, options: parseOptions);
         if (!newResult.Success)
         {
             return OutputParseError(errorFormat, newResult.Errors, "Failed to parse current schema", newFilePath);
@@ -272,6 +302,34 @@ public static class Program
             }
         }
         return 0;
+    }
+
+    static ImportResolver CreateGitAwareImportResolver(string gitRoot, string refName)
+    {
+        return async (currentFile, importPath) =>
+        {
+            var currentDir = Path.GetDirectoryName(currentFile) ?? gitRoot;
+            var absolutePath = Path.GetFullPath(Path.Combine(currentDir, importPath));
+
+            var relativePath = Path.GetRelativePath(gitRoot, absolutePath).Replace('\\', '/');
+            var inRepo = !relativePath.StartsWith("..") && !Path.IsPathRooted(relativePath);
+            if (inRepo)
+            {
+                var contentFromGit = await RunGitCommand($"show {refName}:{relativePath}", gitRoot);
+                if (contentFromGit != null)
+                {
+                    return (absolutePath, contentFromGit);
+                }
+            }
+
+            if (File.Exists(absolutePath))
+            {
+                var content = await File.ReadAllTextAsync(absolutePath);
+                return (absolutePath, content);
+            }
+
+            throw new FileNotFoundException($"Imported file not found: {importPath}", absolutePath);
+        };
     }
 
     static int OutputParseError(string errorFormat, List<ParseError> errors, string message, string filePath)

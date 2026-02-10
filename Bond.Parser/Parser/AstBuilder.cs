@@ -50,7 +50,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         return new Namespace(lang, name);
     }
 
-    public override object? VisitLanguage(BondParser.LanguageContext context)
+    public override object VisitLanguage(BondParser.LanguageContext context)
     {
         return context.GetText() switch
         {
@@ -157,11 +157,11 @@ public class AstBuilder : BondBaseVisitor<object?>
         Declaration result;
         if (context.structView() != null)
         {
-            result = VisitStructView(context.structView(), name, typeParams, attributes)!;
+            result = VisitStructView(name, typeParams, attributes);
         }
         else if (context.structDef() != null)
         {
-            result = VisitStructDef(context.structDef(), name, typeParams, attributes)!;
+            result = VisitStructDef(context.structDef(), name, typeParams, attributes);
         }
         else
         {
@@ -174,7 +174,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         return result;
     }
 
-    private StructDeclaration VisitStructView(BondParser.StructViewContext context, string name, TypeParam[] typeParams, Syntax.Attribute[] attributes)
+    private StructDeclaration VisitStructView(string name, TypeParam[] typeParams, Syntax.Attribute[] attributes)
     {
         return new StructDeclaration
         {
@@ -419,7 +419,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         return new Field(attributes, ordinal, modifier, type, name, defaultValue);
     }
 
-    public override object? VisitModifier(BondParser.ModifierContext context)
+    public override object VisitModifier(BondParser.ModifierContext context)
     {
         if (context.REQUIRED_OPTIONAL() != null)
         {

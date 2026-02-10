@@ -33,15 +33,19 @@ public record ParseResult(
 /// <summary>
 /// Main facade for parsing Bond files
 /// </summary>
+public sealed record ParseOptions(bool IgnoreImports = false);
+
 public static class ParserFacade
 {
+
     /// <summary>
     /// Parses a Bond file from a file path
     /// </summary>
     public static async Task<ParseResult> ParseFileAsync(
         string filePath,
         ImportResolver? importResolver = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ParseOptions? options = null)
     {
         if (!File.Exists(filePath))
         {
@@ -51,24 +55,52 @@ public static class ParserFacade
         var content = await File.ReadAllTextAsync(filePath, cancellationToken);
         var absolutePath = Path.GetFullPath(filePath);
 
-        return await ParseContentAsync(content, absolutePath, importResolver ?? DefaultImportResolver.Resolve);
+        return await ParseContentInternalAsync(
+            content,
+            absolutePath,
+            importResolver ?? DefaultImportResolver.Resolve,
+            options);
     }
 
     /// <summary>
     /// Parses Bond content from a string without file path context
     /// </summary>
-    public static Task<ParseResult> ParseStringAsync(string content, ImportResolver? importResolver = null)
+    public static Task<ParseResult> ParseStringAsync(
+        string content,
+        ImportResolver? importResolver = null,
+        ParseOptions? options = null)
     {
-        return ParseContentAsync(content, "<inline>", importResolver ?? DefaultImportResolver.Resolve);
+        return ParseContentInternalAsync(
+            content,
+            "<inline>",
+            importResolver ?? DefaultImportResolver.Resolve,
+            options);
+    }
+
+    /// <summary>
+    /// Parses Bond content from a string with file path context
+    /// </summary>
+    public static Task<ParseResult> ParseContentAsync(
+        string content,
+        string filePath,
+        ImportResolver? importResolver = null,
+        ParseOptions? options = null)
+    {
+        return ParseContentInternalAsync(
+            content,
+            filePath,
+            importResolver ?? DefaultImportResolver.Resolve,
+            options);
     }
 
     /// <summary>
     /// Parses Bond content from a string
     /// </summary>
-    private static async Task<ParseResult> ParseContentAsync(
+    private static async Task<ParseResult> ParseContentInternalAsync(
         string content,
         string filePath,
-        ImportResolver importResolver)
+        ImportResolver importResolver,
+        ParseOptions? options)
     {
         var errors = new List<ParseError>();
 
@@ -92,6 +124,11 @@ public static class ParserFacade
             // Build AST
             var astBuilder = new AstBuilder();
             var ast = (Syntax.Bond)astBuilder.Visit(parseTree)!;
+
+            if (options?.IgnoreImports == true)
+            {
+                return new ParseResult(ast, errors);
+            }
 
             // Perform semantic analysis
             var symbolTable = new SymbolTable();

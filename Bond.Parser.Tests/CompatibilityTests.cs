@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Bond.Parser.Compatibility;
@@ -524,6 +527,66 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(schema, schema);
 
         changes.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Issues
+
+    [Fact]
+    public async Task BreakingCheck_WithImports_ResolvesTypes()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "bond-parser-tests", Guid.NewGuid().ToString("N"));
+        var mainPath = Path.Combine(root, "schema.bond");
+        var commonPath = Path.Combine(root, "common.bond");
+
+        var commonSchema = """
+            namespace Test
+            struct Common { 0: required int32 id; }
+        """;
+
+        var oldSchema = """
+            import "common.bond"
+            namespace Test
+            struct User { 0: required Common c; }
+        """;
+
+        var newSchema = """
+            import "common.bond"
+            namespace Test
+            struct User {
+                0: required Common c;
+                1: optional int32 age;
+            }
+        """;
+
+        var files = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [commonPath] = commonSchema
+        };
+
+        ImportResolver resolver = (currentFile, importPath) =>
+        {
+            var currentDir = Path.GetDirectoryName(currentFile) ?? root;
+            var absolutePath = Path.GetFullPath(Path.Combine(currentDir, importPath));
+            if (!files.TryGetValue(absolutePath, out var content))
+            {
+                throw new FileNotFoundException($"Imported file not found: {importPath}", absolutePath);
+            }
+            return Task.FromResult((absolutePath, content));
+        };
+
+        var oldResult = await ParserFacade.ParseContentAsync(oldSchema, mainPath, resolver);
+        oldResult.Success.Should().BeTrue($"parsing should succeed but got errors: {string.Join(", ", oldResult.Errors.Select(e => e.Message))}");
+
+        var newResult = await ParserFacade.ParseContentAsync(newSchema, mainPath, resolver);
+        newResult.Success.Should().BeTrue($"parsing should succeed but got errors: {string.Join(", ", newResult.Errors.Select(e => e.Message))}");
+
+        var changes = _checker.CheckCompatibility(oldResult.Ast!, newResult.Ast!);
+
+        changes.Should().Contain(c =>
+            c.Category == ChangeCategory.Compatible &&
+            c.Description.Contains("age"));
     }
 
     #endregion

@@ -11,7 +11,7 @@ namespace Bond.Parser.Json;
 /// </summary>
 public class DeclarationJsonConverter : JsonConverter<Declaration>
 {
-    public override Declaration? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Declaration Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         throw new NotSupportedException("Deserialization not implemented");
     }

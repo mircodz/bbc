@@ -1,5 +1,4 @@
 using System;
-using System.Numerics;
 using Bond.Parser.Syntax;
 using Bond.Parser.Util;
 

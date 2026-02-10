@@ -39,7 +39,7 @@ public class SemanticAnalyzer
         foreach (var declaration in bond.Declarations)
         {
             _symbolTable.AddDeclaration(declaration, bond.Namespaces);
-            ValidateDeclaration(declaration, bond.Namespaces);
+            ValidateDeclaration(declaration);
         }
     }
 
@@ -82,7 +82,7 @@ public class SemanticAnalyzer
         return (Syntax.Bond)astBuilder.Visit(parseTree)!;
     }
 
-    private void ValidateDeclaration(Declaration declaration, Namespace[] namespaces)
+    private void ValidateDeclaration(Declaration declaration)
     {
         switch (declaration)
         {
