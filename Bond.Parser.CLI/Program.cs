@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Bond.Parser.Parser;
+using Bond.Parser.Formatting;
 using Bond.Parser.Compatibility;
 using Bond.Parser.Json;
 using System.Text.Json;
@@ -26,6 +27,8 @@ public static class Program
         {
             "breaking" => await RunBreakingCommand(args[1..]),
             "parse" => await RunParseCommand(args[1..]),
+            "fmt" => await RunFormatCommand(args[1..]),
+            "format" => await RunFormatCommand(args[1..]),
             _ => await RunParseCommand(args) // Default to parse for backward compatibility
         };
     }
@@ -41,6 +44,7 @@ public static class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  parse       Parse and validate a Bond schema file");
         Console.WriteLine("  breaking    Check for breaking changes against a reference schema");
+        Console.WriteLine("  format      Format a Bond schema file");
         Console.WriteLine();
         Console.WriteLine("Parse Options:");
         Console.WriteLine("  -v, --verbose              Show detailed AST output");
@@ -52,10 +56,14 @@ public static class Program
         Console.WriteLine("  --error-format <format>    Output format: text, json (default: text)");
         Console.WriteLine("  --ignore-imports           Compare without resolving imports or types");
         Console.WriteLine();
+        Console.WriteLine("Format Options:");
+        Console.WriteLine("  --check                    Exit non-zero if formatting is needed");
+        Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  bbc parse schema.bond");
         Console.WriteLine("  bbc breaking schema.bond --against schema_v1.bond");
         Console.WriteLine("  bbc breaking schema.bond --against .git#branch=main --error-format=json");
+        Console.WriteLine("  bbc format schema.bond");
         Console.WriteLine();
         Console.WriteLine("Global Options:");
         Console.WriteLine("  -h, --help                 Show this help message");
@@ -152,6 +160,65 @@ public static class Program
         }
 
         return await CheckBreaking(reference, filePath, errorFormat, verbose, ignoreImports);
+    }
+
+    static async Task<int> RunFormatCommand(string[] args)
+    {
+        if (args.Length == 0)
+        {
+            WriteError("Error: No file specified");
+            ShowHelp();
+            return 1;
+        }
+
+        var filePath = args[0];
+        var check = args.Contains("--check");
+
+        if (!File.Exists(filePath))
+        {
+            WriteError($"Error: File not found: {filePath}");
+            return 1;
+        }
+
+        var content = await File.ReadAllTextAsync(filePath);
+        var result = BondFormatter.Format(content, Path.GetFullPath(filePath));
+
+        if (!result.Success)
+        {
+            Console.Error.WriteLine($"format failed: {filePath}");
+            foreach (var error in result.Errors)
+            {
+                Console.Error.WriteLine($"{error.Line}:{error.Column}: {error.Message}");
+                if (error.FilePath != null)
+                {
+                    Console.Error.WriteLine($"  in {error.FilePath}");
+                }
+            }
+            return 1;
+        }
+
+        if (result.FormattedText == null)
+        {
+            WriteError("Error: Format produced no output");
+            return 1;
+        }
+
+        if (check)
+        {
+            if (!string.Equals(content, result.FormattedText, StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine($"{filePath} would be reformatted");
+                return 1;
+            }
+            return 0;
+        }
+
+        if (!string.Equals(content, result.FormattedText, StringComparison.Ordinal))
+        {
+            await File.WriteAllTextAsync(filePath, result.FormattedText);
+        }
+
+        return 0;
     }
 
     private sealed record ResolvedReference(
