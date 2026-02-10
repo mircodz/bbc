@@ -931,7 +931,7 @@ public class ParserFacadeTests
             namespace Test
             using guid = string;
             struct User {
-                0: required map<guid, int> map;
+                0: required map<guid, int16> properties;
             }
         """;
 
