@@ -17,10 +17,16 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>bbc</ToolCommandName>
     <PackageId>bbc</PackageId>
-    <Version>0.2.2</Version>
     <Authors>Mirco De Zorzi</Authors>
     <Description>Bond IDL compiler and toolchain</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <RootNamespace>Bond.Parser.CLI</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+    <None Include="../LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
 </Project>

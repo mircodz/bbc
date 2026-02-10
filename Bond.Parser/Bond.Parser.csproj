@@ -7,12 +7,15 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Title>Bond IDL Parser</Title>
     <PackageId>Bond.Parser</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <NoWarn>CS1584,CS1658,CS1591</NoWarn>
     <RootNamespace>Bond.Parser</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="../README.md" Pack="true" PackagePath="/" />
+    <None Include="../LICENSE" Pack="true" PackagePath="/" />
   </ItemGroup>
 
   <ItemGroup>
