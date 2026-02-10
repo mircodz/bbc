@@ -533,7 +533,6 @@ public class CompatibilityTests
 
     #region Issues
 
-    // #2
     [Fact]
     public async Task BreakingCheck_WithImports_ResolvesTypes()
     {
