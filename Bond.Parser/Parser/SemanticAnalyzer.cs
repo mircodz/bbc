@@ -173,24 +173,47 @@ public class SemanticAnalyzer
     }
 
     /// <summary>
-    /// Resolves type aliases to their underlying types
+    /// Resolves type aliases to their underlying types, including nested container types
     /// </summary>
     private BondType ResolveAliases(BondType type, Namespace[] namespaces)
     {
-        if (type is not BondType.UnresolvedUserType unresolved)
-        {
-            return type;
-        }
+        return ResolveAliases(type, namespaces, new HashSet<Declaration>());
+    }
 
+    private BondType ResolveAliases(BondType type, Namespace[] namespaces, HashSet<Declaration> visiting)
+    {
+        return type switch
+        {
+            BondType.UnresolvedUserType unresolved => ResolveAliasType(unresolved, namespaces, visiting),
+            BondType.List list => new BondType.List(ResolveAliases(list.ElementType, namespaces, visiting)),
+            BondType.Vector vector => new BondType.Vector(ResolveAliases(vector.ElementType, namespaces, visiting)),
+            BondType.Set set => new BondType.Set(ResolveAliases(set.KeyType, namespaces, visiting)),
+            BondType.Map map => new BondType.Map(
+                ResolveAliases(map.KeyType, namespaces, visiting),
+                ResolveAliases(map.ValueType, namespaces, visiting)),
+            BondType.Nullable nullable => new BondType.Nullable(ResolveAliases(nullable.ElementType, namespaces, visiting)),
+            BondType.Maybe maybe => new BondType.Maybe(ResolveAliases(maybe.ElementType, namespaces, visiting)),
+            BondType.Bonded bonded => new BondType.Bonded(ResolveAliases(bonded.StructType, namespaces, visiting)),
+            _ => type
+        };
+    }
+
+    private BondType ResolveAliasType(BondType.UnresolvedUserType unresolved, Namespace[] namespaces, HashSet<Declaration> visiting)
+    {
         var decl = _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
-
-        // Recursively resolve aliases
-        if (decl is AliasDeclaration alias)
+        if (decl is not AliasDeclaration alias)
         {
-            return ResolveAliases(alias.AliasedType, namespaces);
+            return unresolved;
         }
 
-        return type;
+        if (!visiting.Add(alias))
+        {
+            return unresolved;
+        }
+
+        var resolved = ResolveAliases(alias.AliasedType, namespaces, visiting);
+        visiting.Remove(alias);
+        return resolved;
     }
 
     private void ValidateField(Field field, Namespace[] namespaces)
