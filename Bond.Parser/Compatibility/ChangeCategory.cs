@@ -6,14 +6,24 @@ namespace Bond.Parser.Compatibility;
 public enum ChangeCategory
 {
     /// <summary>
-    /// Compatible changes that don't break wire compatibility
+    /// Compatible with all protocols — safe to deploy without coordination.
     /// </summary>
     Compatible,
 
     /// <summary>
-    /// Breaking changes that are not compatible
+    /// Breaks binary wire protocols (Compact Binary, Fast Binary, …).
+    /// Fields are identified by ordinal on the wire, so changes to ordinals,
+    /// required-ness, types, defaults, or inheritance all fall here.
     /// </summary>
-    Breaking
+    BreakingWire,
+
+    /// <summary>
+    /// Breaks text-based protocols (SimpleJSON, SimpleXML, …) but is safe
+    /// for binary protocols. Field name changes are the primary example:
+    /// binary protocols use ordinals so they are unaffected, but text
+    /// protocols key on the field name.
+    /// </summary>
+    BreakingText,
 }
 
 /// <summary>
@@ -30,9 +40,10 @@ public record SchemaChange(
     {
         var categoryStr = Category switch
         {
-            ChangeCategory.Compatible => "COMPATIBLE",
-            ChangeCategory.Breaking => "BREAKING",
-            _ => "UNKNOWN"
+            ChangeCategory.Compatible    => "COMPATIBLE",
+            ChangeCategory.BreakingWire  => "BREAKING-WIRE",
+            ChangeCategory.BreakingText  => "BREAKING-TEXT",
+            _                            => "UNKNOWN"
         };
 
         var result = $"[{categoryStr}] {Location}: {Description}";

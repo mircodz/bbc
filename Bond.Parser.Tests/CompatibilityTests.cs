@@ -40,7 +40,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.ToLower().Contains("required") &&
             c.Description.Contains("email"));
     }
@@ -63,7 +63,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.Contains("removed"));
     }
 
@@ -84,10 +84,10 @@ public class CompatibilityTests
         // Changing ordinals is detected as remove + add
         changes.Should().HaveCount(2);
         changes.Should().Contain(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.ToLower().Contains("removed"));
         changes.Should().Contain(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.ToLower().Contains("added"));
     }
 
@@ -106,7 +106,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.ToLower().Contains("type"));
     }
 
@@ -125,7 +125,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.ToLower().Contains("default"));
     }
 
@@ -144,7 +144,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.ToLower().Contains("modifier"));
     }
 
@@ -163,11 +163,31 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.ToLower().Contains("modifier"));
     }
 
     #endregion
+
+    [Fact]
+    public async Task RenamingField_IsBreakingText()
+    {
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            struct User { 0: optional string name; }
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            struct User { 0: optional string full_name; }
+        """);
+
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        changes.Should().ContainSingle(c =>
+            c.Category == ChangeCategory.BreakingText &&
+            c.Description.Contains("name") &&
+            c.Description.Contains("full_name"));
+    }
 
     #region Field Changes - Compatible
 
@@ -371,7 +391,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.Contains("value") &&
             c.Description.Contains("Inactive"));
     }
@@ -391,7 +411,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.Contains("removed") &&
             c.Description.Contains("Inactive"));
     }
@@ -419,7 +439,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.Contains("Inheritance"));
     }
 
@@ -440,7 +460,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.Contains("Inheritance"));
     }
 
@@ -464,7 +484,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.Contains("removed") &&
             c.Description.Contains("Profile"));
     }
@@ -505,7 +525,7 @@ public class CompatibilityTests
         var changes = _checker.CheckCompatibility(oldSchema, newSchema);
 
         changes.Should().ContainSingle(c =>
-            c.Category == ChangeCategory.Breaking &&
+            c.Category == ChangeCategory.BreakingWire &&
             c.Description.Contains("kind changed"));
     }
 

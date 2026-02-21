@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bond.Parser.Syntax;
@@ -25,7 +26,7 @@ public class CompatibilityChecker
             if (!newDecls.ContainsKey(oldDecl.QualifiedName))
             {
                 changes.Add(new SchemaChange(
-                    ChangeCategory.Breaking,
+                    ChangeCategory.BreakingWire,
                     $"{oldDecl.Kind} '{oldDecl.Name}' was removed",
                     oldDecl.QualifiedName,
                     "Removing declarations breaks existing code using them"));
@@ -61,7 +62,7 @@ public class CompatibilityChecker
         if (oldDecl.GetType() != newDecl.GetType())
         {
             changes.Add(new SchemaChange(
-                ChangeCategory.Breaking,
+                ChangeCategory.BreakingWire,
                 $"Declaration kind changed from {oldDecl.Kind} to {newDecl.Kind}",
                 oldDecl.QualifiedName));
             return;
@@ -94,7 +95,7 @@ public class CompatibilityChecker
         if (oldBase != newBase)
         {
             changes.Add(new SchemaChange(
-                ChangeCategory.Breaking,
+                ChangeCategory.BreakingWire,
                 $"Inheritance hierarchy changed from '{oldBase}' to '{newBase}'",
                 location,
                 "Changing inheritance breaks wire compatibility"));
@@ -110,7 +111,7 @@ public class CompatibilityChecker
             if (!newFields.ContainsKey(oldField.Ordinal))
             {
                 var category = oldField.Modifier == FieldModifier.Required
-                    ? ChangeCategory.Breaking
+                    ? ChangeCategory.BreakingWire
                     : ChangeCategory.Compatible;
 
                 var recommendation = oldField.Modifier == FieldModifier.Required
@@ -131,7 +132,7 @@ public class CompatibilityChecker
             if (!oldFields.ContainsKey(newField.Ordinal))
             {
                 var category = newField.Modifier == FieldModifier.Required
-                    ? ChangeCategory.Breaking
+                    ? ChangeCategory.BreakingWire
                     : ChangeCategory.Compatible;
 
                 var recommendation = newField.Modifier == FieldModifier.Required
@@ -160,14 +161,14 @@ public class CompatibilityChecker
     {
         var location = $"{structLocation}.{oldField.Name}";
 
-        // Check if field name changed (can break text protocols)
+        // Field name changes are safe on the wire (ordinals are used) but break
+        // text-based protocols like SimpleJSON which key on field names.
         if (oldField.Name != newField.Name)
         {
             changes.Add(new SchemaChange(
-                ChangeCategory.Compatible,
+                ChangeCategory.BreakingText,
                 $"Field name changed from '{oldField.Name}' to '{newField.Name}'",
-                location,
-                "Name changes can break text-based protocols like SimpleJsonProtocol"));
+                location));
         }
 
         // Check modifier changes
@@ -198,7 +199,7 @@ public class CompatibilityChecker
         if (!DefaultsEqual(oldField.DefaultValue, newField.DefaultValue))
         {
             changes.Add(new SchemaChange(
-                ChangeCategory.Breaking,
+                ChangeCategory.BreakingWire,
                 $"Default value changed from {oldField.DefaultValue} to {newField.DefaultValue}",
                 location,
                 "Changing default values breaks wire compatibility"));
@@ -222,7 +223,7 @@ public class CompatibilityChecker
             if (!newByName.ContainsKey(oldConst.Name))
             {
                 changes.Add(new SchemaChange(
-                    ChangeCategory.Breaking,
+                    ChangeCategory.BreakingWire,
                     $"Enum constant '{oldConst.Name}' was removed",
                     $"{location}.{oldConst.Name}",
                     "Removing enum constants breaks compatibility"));
@@ -234,11 +235,12 @@ public class CompatibilityChecker
         {
             if (!oldByName.ContainsKey(newConst.Name))
             {
-                // Check if it could cause implicit reordering
+                // Adding a constant without an explicit value in the middle shifts
+                // all subsequent implicit values, which is wire-breaking.
                 var newIndex = newConstants.IndexOf(newConst);
                 var couldReorder = newIndex < oldConstants.Count && !newConst.Value.HasValue;
 
-                var category = couldReorder ? ChangeCategory.Breaking : ChangeCategory.Compatible;
+                var category = couldReorder ? ChangeCategory.BreakingWire : ChangeCategory.Compatible;
                 var recommendation = couldReorder
                     ? "Adding constant without explicit value in the middle can cause implicit reordering"
                     : null;
@@ -259,7 +261,7 @@ public class CompatibilityChecker
                 if (oldConst.Value != newConst.Value)
                 {
                     changes.Add(new SchemaChange(
-                        ChangeCategory.Breaking,
+                        ChangeCategory.BreakingWire,
                         $"Enum constant '{name}' value changed from {oldConst.Value} to {newConst.Value}",
                         $"{location}.{name}",
                         "Changing enum constant values breaks compatibility"));
@@ -271,7 +273,7 @@ public class CompatibilityChecker
                 if (oldIndex != newIndex)
                 {
                     changes.Add(new SchemaChange(
-                        ChangeCategory.Breaking,
+                        ChangeCategory.BreakingWire,
                         $"Enum constant '{name}' position changed (implicit reordering)",
                         $"{location}.{name}",
                         "Reordering enum constants can change implicit values"));
@@ -293,7 +295,7 @@ public class CompatibilityChecker
             if (!newMethods.ContainsKey(oldMethod.Name))
             {
                 changes.Add(new SchemaChange(
-                    ChangeCategory.Breaking,
+                    ChangeCategory.BreakingWire,
                     $"Method '{oldMethod.Name}' was removed",
                     $"{location}.{oldMethod.Name}"));
             }
@@ -318,7 +320,7 @@ public class CompatibilityChecker
                 if (oldMethod.ToString() != newMethod.ToString())
                 {
                     changes.Add(new SchemaChange(
-                        ChangeCategory.Breaking,
+                        ChangeCategory.BreakingWire,
                         $"Method signature changed",
                         $"{location}.{name}",
                         $"Old: {oldMethod}\nNew: {newMethod}"));
@@ -332,26 +334,26 @@ public class CompatibilityChecker
         if (!TypesEqual(oldAlias.AliasedType, newAlias.AliasedType))
         {
             changes.Add(new SchemaChange(
-                ChangeCategory.Breaking,
+                ChangeCategory.BreakingWire,
                 $"Alias type changed from {oldAlias.AliasedType} to {newAlias.AliasedType}",
                 $"alias {oldAlias.Name}"));
         }
     }
 
-    private ChangeCategory ClassifyModifierChange(FieldModifier oldMod, FieldModifier newMod)
+    private static ChangeCategory ClassifyModifierChange(FieldModifier oldMod, FieldModifier newMod)
     {
         // Direct optional <-> required is breaking
         if ((oldMod == FieldModifier.Optional && newMod == FieldModifier.Required) ||
             (oldMod == FieldModifier.Required && newMod == FieldModifier.Optional))
         {
-            return ChangeCategory.Breaking;
+            return ChangeCategory.BreakingWire;
         }
 
         // Two-step changes via required_optional are safe but need careful rollout
         return ChangeCategory.Compatible;
     }
 
-    private string GetModifierChangeRecommendation(FieldModifier oldMod, FieldModifier newMod)
+    private static string GetModifierChangeRecommendation(FieldModifier oldMod, FieldModifier newMod)
     {
         if ((oldMod == FieldModifier.Optional && newMod == FieldModifier.Required) ||
             (oldMod == FieldModifier.Required && newMod == FieldModifier.Optional))
@@ -362,129 +364,102 @@ public class CompatibilityChecker
         return "Deploy to all consumers before deploying to producers";
     }
 
-    private (ChangeCategory Category, string? Recommendation) ClassifyTypeChange(BondType oldType, BondType newType)
+    private static (ChangeCategory Category, string? Recommendation) ClassifyTypeChange(BondType oldType, BondType newType)
     {
         // Safe type changes
         if (IsInt32ToEnumChange(oldType, newType) || IsInt32ToEnumChange(newType, oldType))
-        {
             return (ChangeCategory.Compatible, null);
-        }
 
         if (IsVectorListChange(oldType, newType))
-        {
             return (ChangeCategory.Compatible, null);
-        }
 
         if (IsBlobVectorChange(oldType, newType))
-        {
             return (ChangeCategory.Compatible, null);
-        }
 
         if (IsBondedChange(oldType, newType))
-        {
             return (ChangeCategory.Compatible, null);
-        }
 
-        // Numeric promotions (require careful rollout)
+        // Numeric promotions (require careful rollout — consumers must update first)
         if (IsNumericPromotion(oldType, newType))
-        {
-            return (ChangeCategory.Compatible,
-                   "Deploy to consumers before producers when promoting numeric types");
-        }
+            return (ChangeCategory.Compatible, "Deploy to consumers before producers when promoting numeric types");
 
         if (IsIntToEnumPromotion(oldType, newType))
-        {
-            return (ChangeCategory.Compatible,
-                   "Deploy to consumers before producers when promoting int8/int16 to enum");
-        }
+            return (ChangeCategory.Compatible, "Deploy to consumers before producers when promoting int8/int16 to enum");
 
         // Everything else is breaking
-        return (ChangeCategory.Breaking, "This type change is not compatible");
+        return (ChangeCategory.BreakingWire, "This type change is not compatible");
     }
 
-    private bool IsInt32ToEnumChange(BondType type1, BondType type2)
-    {
-        return type1 is BondType.Int32 &&
-               (type2 is BondType.UserDefined { Declaration: EnumDeclaration } or BondType.UnresolvedUserType);
-    }
+    private static bool IsInt32ToEnumChange(BondType type1, BondType type2) =>
+        type1 is BondType.Int32 &&
+        type2 is BondType.UserDefined { Declaration: EnumDeclaration };
 
-    private bool IsVectorListChange(BondType type1, BondType type2)
-    {
-        return (type1, type2) switch
+    private static bool IsVectorListChange(BondType type1, BondType type2) =>
+        (type1, type2) switch
         {
-            (BondType.Vector v1, BondType.List l1) => TypesEqual(v1.ElementType, l1.ElementType),
-            (BondType.List l2, BondType.Vector v2) => TypesEqual(l2.ElementType, v2.ElementType),
+            (BondType.Vector v, BondType.List l)   => TypesEqual(v.ElementType, l.ElementType),
+            (BondType.List l,   BondType.Vector v) => TypesEqual(l.ElementType, v.ElementType),
             _ => false
         };
-    }
 
-    private bool IsBlobVectorChange(BondType type1, BondType type2)
-    {
-        return (type1, type2) switch
+    private static bool IsBlobVectorChange(BondType type1, BondType type2) =>
+        (type1, type2) switch
         {
             (BondType.Blob, BondType.Vector { ElementType: BondType.Int8 }) => true,
             (BondType.Vector { ElementType: BondType.Int8 }, BondType.Blob) => true,
-            (BondType.Blob, BondType.List { ElementType: BondType.Int8 }) => true,
-            (BondType.List { ElementType: BondType.Int8 }, BondType.Blob) => true,
+            (BondType.Blob, BondType.List   { ElementType: BondType.Int8 }) => true,
+            (BondType.List   { ElementType: BondType.Int8 }, BondType.Blob) => true,
             _ => false
         };
-    }
 
-    private bool IsBondedChange(BondType type1, BondType type2)
-    {
-        return (type1, type2) switch
+    private static bool IsBondedChange(BondType type1, BondType type2) =>
+        (type1, type2) switch
         {
             (BondType.Bonded bonded, var t) => TypesEqual(bonded.StructType, t),
             (var t, BondType.Bonded bonded) => TypesEqual(t, bonded.StructType),
             _ => false
         };
-    }
 
-    private bool IsNumericPromotion(BondType oldType, BondType newType)
-    {
-        var promotions = new[]
+    // Static table allocated once; HashSet gives O(1) lookup.
+    private static readonly HashSet<(Type, Type)> NumericPromotions =
+    [
+        (typeof(BondType.Float),  typeof(BondType.Double)),
+        (typeof(BondType.UInt8),  typeof(BondType.UInt16)),
+        (typeof(BondType.UInt8),  typeof(BondType.UInt32)),
+        (typeof(BondType.UInt8),  typeof(BondType.UInt64)),
+        (typeof(BondType.UInt16), typeof(BondType.UInt32)),
+        (typeof(BondType.UInt16), typeof(BondType.UInt64)),
+        (typeof(BondType.UInt32), typeof(BondType.UInt64)),
+        (typeof(BondType.Int8),   typeof(BondType.Int16)),
+        (typeof(BondType.Int8),   typeof(BondType.Int32)),
+        (typeof(BondType.Int8),   typeof(BondType.Int64)),
+        (typeof(BondType.Int16),  typeof(BondType.Int32)),
+        (typeof(BondType.Int16),  typeof(BondType.Int64)),
+        (typeof(BondType.Int32),  typeof(BondType.Int64)),
+    ];
+
+    private static bool IsNumericPromotion(BondType oldType, BondType newType) =>
+        NumericPromotions.Contains((oldType.GetType(), newType.GetType()));
+
+    private static bool IsIntToEnumPromotion(BondType oldType, BondType newType) =>
+        oldType is BondType.Int8 or BondType.Int16 &&
+        newType is BondType.UserDefined { Declaration: EnumDeclaration };
+
+    // Structural type equality. BondType.UserDefined contains a BondType[] for type
+    // arguments; array reference equality is insufficient, so we recurse manually.
+    // For all other BondType subtypes the generated record == operator is correct.
+    private static bool TypesEqual(BondType type1, BondType type2) =>
+        (type1, type2) switch
         {
-            (typeof(BondType.Float), typeof(BondType.Double)),
-            (typeof(BondType.UInt8), typeof(BondType.UInt16)),
-            (typeof(BondType.UInt8), typeof(BondType.UInt32)),
-            (typeof(BondType.UInt8), typeof(BondType.UInt64)),
-            (typeof(BondType.UInt16), typeof(BondType.UInt32)),
-            (typeof(BondType.UInt16), typeof(BondType.UInt64)),
-            (typeof(BondType.UInt32), typeof(BondType.UInt64)),
-            (typeof(BondType.Int8), typeof(BondType.Int16)),
-            (typeof(BondType.Int8), typeof(BondType.Int32)),
-            (typeof(BondType.Int8), typeof(BondType.Int64)),
-            (typeof(BondType.Int16), typeof(BondType.Int32)),
-            (typeof(BondType.Int16), typeof(BondType.Int64)),
-            (typeof(BondType.Int32), typeof(BondType.Int64))
+            (BondType.UserDefined u1, BondType.UserDefined u2) =>
+                u1.Declaration.QualifiedName == u2.Declaration.QualifiedName &&
+                u1.TypeArguments.Length == u2.TypeArguments.Length &&
+                u1.TypeArguments.Zip(u2.TypeArguments).All(p => TypesEqual(p.First, p.Second)),
+            _ => type1 == type2
         };
 
-        return promotions.Any(p => p.Item1 == oldType.GetType() && p.Item2 == newType.GetType());
-    }
-
-    private bool IsIntToEnumPromotion(BondType oldType, BondType newType)
-    {
-        return (oldType is BondType.Int8 or BondType.Int16) &&
-               (newType is BondType.UserDefined { Declaration: EnumDeclaration } or BondType.UnresolvedUserType);
-    }
-
-    private bool TypesEqual(BondType type1, BondType type2)
-    {
-        return type1.ToString() == type2.ToString();
-    }
-
-    private bool DefaultsEqual(Default? default1, Default? default2)
-    {
-        if (default1 == null && default2 == null)
-        {
-            return true;
-        }
-
-        if (default1 == null || default2 == null)
-        {
-            return false;
-        }
-
-        return default1.ToString() == default2.ToString();
-    }
+    // Default record equality handles all subtypes correctly. Unlike ToString(),
+    // this correctly distinguishes Default.Float(1.0) from Default.Integer(1).
+    private static bool DefaultsEqual(Default? default1, Default? default2) =>
+        default1 == default2;
 }
