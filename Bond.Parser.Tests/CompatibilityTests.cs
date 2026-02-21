@@ -610,4 +610,174 @@ public class CompatibilityTests
     }
 
     #endregion
+
+    #region Service Changes
+
+    [Fact]
+    public async Task ServiceInheritanceChange_IsBreaking()
+    {
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            service Base1 { void Method1(void); }
+            service Base2 { void Method2(void); }
+            service MySvc : Base1 { void Method3(void); }
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            service Base1 { void Method1(void); }
+            service Base2 { void Method2(void); }
+            service MySvc : Base2 { void Method3(void); }
+        """);
+
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        changes.Should().ContainSingle(c =>
+            c.Category == ChangeCategory.BreakingWire &&
+            c.Description.Contains("Inheritance"));
+    }
+
+    [Fact]
+    public async Task ServiceInheritanceAdded_IsBreaking()
+    {
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            service Base { void BaseMethod(void); }
+            service MySvc { void MyMethod(void); }
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            service Base { void BaseMethod(void); }
+            service MySvc : Base { void MyMethod(void); }
+        """);
+
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        changes.Should().ContainSingle(c =>
+            c.Category == ChangeCategory.BreakingWire &&
+            c.Description.Contains("Inheritance"));
+    }
+
+    [Fact]
+    public async Task ServiceInheritanceRemoved_IsBreaking()
+    {
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            service Base { void BaseMethod(void); }
+            service MySvc : Base { void MyMethod(void); }
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            service Base { void BaseMethod(void); }
+            service MySvc { void MyMethod(void); }
+        """);
+
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        changes.Should().ContainSingle(c =>
+            c.Category == ChangeCategory.BreakingWire &&
+            c.Description.Contains("Inheritance"));
+    }
+
+    #endregion
+
+    #region Enum edge cases
+
+    [Fact]
+    public async Task AddingEnumConstantInMiddle_WithoutExplicitValue_IsBreaking()
+    {
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            enum Status { Active = 0, Inactive = 1 }
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            enum Status { Active = 0, Pending, Inactive = 1 }
+        """);
+
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        changes.Should().ContainSingle(c =>
+            c.Category == ChangeCategory.BreakingWire &&
+            c.Description.Contains("Pending"));
+    }
+
+    [Fact]
+    public async Task AliasTypeChange_IsBreaking()
+    {
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            using MyType = string;
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            using MyType = int32;
+        """);
+
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        changes.Should().ContainSingle(c =>
+            c.Category == ChangeCategory.BreakingWire &&
+            c.Description.Contains("Alias"));
+    }
+
+    [Fact]
+    public async Task AliasChange_VectorToList_IsCompatible()
+    {
+        // vector<T> and list<T> share the same wire encoding; this was previously a
+        // false positive because CompareAliases used TypesEqual instead of ClassifyTypeChange.
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            using Items = vector<int32>;
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            using Items = list<int32>;
+        """);
+
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        changes.Should().NotContain(c => c.Category == ChangeCategory.BreakingWire);
+    }
+
+    [Fact]
+    public async Task EnumInsertion_ShiftsImplicitValues_IsBreaking()
+    {
+        // Classic implicit-reordering case: all constants have implicit values,
+        // inserting X in the middle shifts B from 1→2 and C from 2→3.
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            enum Status { A, B, C }
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            enum Status { A, X, B, C }
+        """);
+
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        // B and C changed effective value; X collides with old B=1.
+        changes.Should().Contain(c => c.Category == ChangeCategory.BreakingWire);
+    }
+
+    [Fact]
+    public async Task EnumInsertion_ExplicitSurroundings_NoCollision_IsCompatible()
+    {
+        // Inserting a constant between explicitly-valued constants that leaves a gap
+        // is safe: existing wire values are unchanged and no collision occurs.
+        var oldSchema = await ParseSchema("""
+            namespace Test
+            enum Status { A = 0, B = 5 }
+        """);
+        var newSchema = await ParseSchema("""
+            namespace Test
+            enum Status { A = 0, X, B = 5 }
+        """);
+
+        // X gets implicit value 1 — no collision with A=0 or B=5, A and B unchanged.
+        var changes = _checker.CheckCompatibility(oldSchema, newSchema);
+
+        changes.Should().NotContain(c => c.Category == ChangeCategory.BreakingWire);
+    }
+
+    #endregion
 }

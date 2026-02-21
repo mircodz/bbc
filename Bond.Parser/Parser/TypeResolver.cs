@@ -60,7 +60,7 @@ public class TypeResolver(SymbolTable symbolTable)
             .ToArray();
 
         var resolvedBase = structDecl.BaseType != null
-            ? ResolveType(structDecl.BaseType, namespaces, structDecl)
+            ? ResolveType(structDecl.BaseType, namespaces, structDecl, structDecl.Location)
             : null;
 
         return structDecl with
@@ -72,7 +72,7 @@ public class TypeResolver(SymbolTable symbolTable)
 
     private AliasDeclaration ResolveAlias(AliasDeclaration aliasDecl, Namespace[] namespaces)
     {
-        var resolvedType = ResolveType(aliasDecl.AliasedType, namespaces);
+        var resolvedType = ResolveType(aliasDecl.AliasedType, namespaces, callerLocation: aliasDecl.Location);
         return aliasDecl with { AliasedType = resolvedType };
     }
 
@@ -83,7 +83,7 @@ public class TypeResolver(SymbolTable symbolTable)
             .ToArray();
 
         var resolvedBase = serviceDecl.BaseType != null
-            ? ResolveType(serviceDecl.BaseType, namespaces)
+            ? ResolveType(serviceDecl.BaseType, namespaces, callerLocation: serviceDecl.Location)
             : null;
 
         return serviceDecl with
@@ -95,7 +95,7 @@ public class TypeResolver(SymbolTable symbolTable)
 
     private Field ResolveField(Field field, Namespace[] namespaces, StructDeclaration? currentStruct = null)
     {
-        var resolvedType = ResolveType(field.Type, namespaces, currentStruct);
+        var resolvedType = ResolveType(field.Type, namespaces, currentStruct, field.Location);
         return field with { Type = resolvedType };
     }
 
@@ -129,7 +129,7 @@ public class TypeResolver(SymbolTable symbolTable)
     /// <summary>
     /// Recursively resolves a BondType, handling nested container types
     /// </summary>
-    private BondType ResolveType(BondType type, Namespace[] namespaces, StructDeclaration? currentStruct = null)
+    private BondType ResolveType(BondType type, Namespace[] namespaces, StructDeclaration? currentStruct = null, SourceLocation callerLocation = default)
     {
         return type switch
         {
@@ -144,29 +144,29 @@ public class TypeResolver(SymbolTable symbolTable)
 
             // Container types - resolve element types recursively
             BondType.List list => new BondType.List(
-                ResolveType(list.ElementType, namespaces, currentStruct)),
+                ResolveType(list.ElementType, namespaces, currentStruct, callerLocation)),
 
             BondType.Vector vector => new BondType.Vector(
-                ResolveType(vector.ElementType, namespaces, currentStruct)),
+                ResolveType(vector.ElementType, namespaces, currentStruct, callerLocation)),
 
             BondType.Set set => new BondType.Set(
-                ResolveType(set.KeyType, namespaces, currentStruct)),
+                ResolveType(set.KeyType, namespaces, currentStruct, callerLocation)),
 
             BondType.Map map => new BondType.Map(
-                ResolveType(map.KeyType, namespaces, currentStruct),
-                ResolveType(map.ValueType, namespaces, currentStruct)),
+                ResolveType(map.KeyType, namespaces, currentStruct, callerLocation),
+                ResolveType(map.ValueType, namespaces, currentStruct, callerLocation)),
 
             BondType.Nullable nullable => new BondType.Nullable(
-                ResolveType(nullable.ElementType, namespaces, currentStruct)),
+                ResolveType(nullable.ElementType, namespaces, currentStruct, callerLocation)),
 
             BondType.Maybe maybe => new BondType.Maybe(
-                ResolveType(maybe.ElementType, namespaces, currentStruct)),
+                ResolveType(maybe.ElementType, namespaces, currentStruct, callerLocation)),
 
             BondType.Bonded bonded => new BondType.Bonded(
-                ResolveType(bonded.StructType, namespaces, currentStruct)),
+                ResolveType(bonded.StructType, namespaces, currentStruct, callerLocation)),
 
             BondType.UnresolvedUserType unresolved =>
-                ResolveUnresolvedType(unresolved, namespaces, currentStruct),
+                ResolveUnresolvedType(unresolved, namespaces, currentStruct, callerLocation),
 
             // Already resolved, but type arguments might need resolution
             BondType.UserDefined userDefined =>
@@ -176,7 +176,7 @@ public class TypeResolver(SymbolTable symbolTable)
         };
     }
 
-    private BondType ResolveUnresolvedType(BondType.UnresolvedUserType unresolved, Namespace[] namespaces, StructDeclaration? currentStruct)
+    private BondType ResolveUnresolvedType(BondType.UnresolvedUserType unresolved, Namespace[] namespaces, StructDeclaration? currentStruct, SourceLocation callerLocation)
     {
         var declaration = symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
 
@@ -191,8 +191,9 @@ public class TypeResolver(SymbolTable symbolTable)
 
         if (declaration == null)
         {
-            throw new InvalidOperationException(
-                $"Type '{string.Join(".", unresolved.QualifiedName)}' not found in symbol table");
+            throw new SemanticErrorException(
+                $"Type '{string.Join(".", unresolved.QualifiedName)}' not found in symbol table",
+                callerLocation);
         }
 
         var resolvedTypeArgs = unresolved.TypeArguments

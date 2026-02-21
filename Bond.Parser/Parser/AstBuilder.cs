@@ -112,7 +112,8 @@ public class AstBuilder : BondBaseVisitor<object?>
         {
             Namespaces = _currentNamespaces.ToArray(),
             Name = name,
-            TypeParameters = typeParams
+            TypeParameters = typeParams,
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
         };
     }
 
@@ -136,7 +137,8 @@ public class AstBuilder : BondBaseVisitor<object?>
             Namespaces = _currentNamespaces.ToArray(),
             Name = name,
             TypeParameters = typeParams,
-            AliasedType = aliasedType
+            AliasedType = aliasedType,
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
         };
     }
 
@@ -151,17 +153,19 @@ public class AstBuilder : BondBaseVisitor<object?>
             ? (TypeParam[])Visit(context.typeParameters())!
             : [];
 
+        var loc = new SourceLocation(context.Start.Line, context.Start.Column + 1);
+
         // Add type parameters to current scope
         _currentTypeParams.AddRange(typeParams);
 
         Declaration result;
         if (context.structView() != null)
         {
-            result = VisitStructView(name, typeParams, attributes);
+            result = VisitStructView(name, typeParams, attributes, loc);
         }
         else if (context.structDef() != null)
         {
-            result = VisitStructDef(context.structDef(), name, typeParams, attributes);
+            result = VisitStructDef(context.structDef(), name, typeParams, attributes, loc);
         }
         else
         {
@@ -174,7 +178,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         return result;
     }
 
-    private StructDeclaration VisitStructView(string name, TypeParam[] typeParams, Syntax.Attribute[] attributes)
+    private StructDeclaration VisitStructView(string name, TypeParam[] typeParams, Syntax.Attribute[] attributes, SourceLocation loc)
     {
         return new StructDeclaration
         {
@@ -183,11 +187,12 @@ public class AstBuilder : BondBaseVisitor<object?>
             Name = name,
             TypeParameters = typeParams,
             BaseType = null,
-            Fields = []
+            Fields = [],
+            Location = loc
         };
     }
 
-    private StructDeclaration VisitStructDef(BondParser.StructDefContext context, string name, TypeParam[] typeParams, Syntax.Attribute[] attributes)
+    private StructDeclaration VisitStructDef(BondParser.StructDefContext context, string name, TypeParam[] typeParams, Syntax.Attribute[] attributes, SourceLocation loc)
     {
         var baseType = context.userType() != null
             ? (BondType)Visit(context.userType())!
@@ -205,7 +210,8 @@ public class AstBuilder : BondBaseVisitor<object?>
             Name = name,
             TypeParameters = typeParams,
             BaseType = baseType,
-            Fields = fields
+            Fields = fields,
+            Location = loc
         };
     }
 
@@ -226,7 +232,8 @@ public class AstBuilder : BondBaseVisitor<object?>
             Attributes = attributes,
             Name = name,
             TypeParameters = [],
-            Constants = constants
+            Constants = constants,
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
         };
     }
 
@@ -294,7 +301,8 @@ public class AstBuilder : BondBaseVisitor<object?>
             Name = name,
             TypeParameters = typeParams,
             BaseType = baseType,
-            Methods = methods
+            Methods = methods,
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
         };
     }
 
@@ -414,7 +422,10 @@ public class AstBuilder : BondBaseVisitor<object?>
             type = new BondType.Maybe(type);
         }
 
-        return new Field(attributes, ordinal, modifier, type, name, defaultValue);
+        return new Field(attributes, ordinal, modifier, type, name, defaultValue)
+        {
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
+        };
     }
 
     public override object VisitModifier(BondParser.ModifierContext context)

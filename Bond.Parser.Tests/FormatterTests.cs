@@ -259,4 +259,74 @@ public class FormatterTests
         result.Success.Should().BeTrue();
         result.FormattedText.Should().Be(expected);
     }
+
+    [Fact]
+    public void Format_ForwardDeclaration()
+    {
+        var input = "namespace Test struct Foo;";
+        var expected = TrimEol("""
+            namespace Test
+
+            struct Foo;
+            """);
+
+        var result = BondFormatter.Format(input, "<inline>");
+
+        result.Success.Should().BeTrue();
+        result.FormattedText.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Format_Service()
+    {
+        var input = "namespace Test service MySvc { void DoStuff(Request req); nothing Event(EventType evt); }";
+        var expected = TrimEol("""
+            namespace Test
+
+            service MySvc {
+                void DoStuff(Request req);
+                nothing Event(EventType evt);
+            }
+            """);
+
+        var result = BondFormatter.Format(input, "<inline>");
+
+        result.Success.Should().BeTrue();
+        result.FormattedText.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Format_MultipleNamespaces()
+    {
+        var input = "namespace cpp Test namespace csharp Test struct Foo{}";
+        var expected = TrimEol("""
+            namespace cpp Test
+            namespace csharp Test
+
+            struct Foo {}
+            """);
+
+        var result = BondFormatter.Format(input, "<inline>");
+
+        result.Success.Should().BeTrue();
+        result.FormattedText.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Format_NestedGenericTypes()
+    {
+        var input = "namespace Test struct Foo { 0: optional map<string,vector<nullable<int32>>> data; }";
+        var expected = TrimEol("""
+            namespace Test
+
+            struct Foo {
+                0: optional map<string, vector<nullable<int32>>> data;
+            }
+            """);
+
+        var result = BondFormatter.Format(input, "<inline>");
+
+        result.Success.Should().BeTrue();
+        result.FormattedText.Should().Be(expected);
+    }
 }

@@ -923,6 +923,157 @@ public class ParserFacadeTests
 
     #endregion
 
+    #region Semantic validation
+
+    [Fact]
+    public async Task DuplicateFieldNames_InStruct_Fails()
+    {
+        var input = """
+            namespace Test
+            struct User {
+                0: required string name;
+                1: required string name;
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.Message.Contains("name"));
+    }
+
+    [Fact]
+    public async Task DuplicateMethodNames_InService_Fails()
+    {
+        var input = """
+            namespace Test
+            struct Req {}
+            service MySvc {
+                void Get(Req);
+                void Get(Req);
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.Message.Contains("Get"));
+    }
+
+    [Fact]
+    public async Task MapWithContainerKeyType_Fails()
+    {
+        // Grammar restricts keyType to basicType|userType, so container keys must be expressed
+        // via an alias that resolves to a container type — the semantic check catches it.
+        var input = """
+            namespace Test
+            using MyList = list<int32>;
+            struct User { 0: required map<MyList, string> data; }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.Message.ToLower().Contains("key"));
+    }
+
+    [Fact]
+    public async Task SetWithContainerKeyType_Fails()
+    {
+        // Grammar restricts keyType to basicType|userType, so container keys must be expressed
+        // via an alias that resolves to a container type — the semantic check catches it.
+        var input = """
+            namespace Test
+            using MyVec = vector<int32>;
+            struct User { 0: required set<MyVec> tags; }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.Message.ToLower().Contains("key"));
+    }
+
+    [Fact]
+    public async Task IntegerDefault_OutOfRangeForInt8_Fails()
+    {
+        var input = """
+            namespace Test
+            struct User { 0: required int8 level = 200; }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.Message.Contains("level"));
+    }
+
+    [Fact]
+    public async Task StructField_WithNothingDefault_Fails()
+    {
+        var input = """
+            namespace Test
+            struct Inner { 0: required int32 id; }
+            struct User { 0: optional Inner inner = nothing; }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.Message.Contains("inner"));
+    }
+
+    [Fact]
+    public async Task AliasOfAlias_ResolvesCorrectly()
+    {
+        var input = """
+            namespace Test
+            using Inner = string;
+            using Outer = Inner;
+            struct User { 0: required Outer id; }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var field = result.Ast!.Declarations.OfType<StructDeclaration>().Single().Fields.Single();
+        field.Type.Should().BeOfType<BondType.UserDefined>();
+    }
+
+    [Fact]
+    public async Task CircularImports_DoNotLoopInfinitely()
+    {
+        const string aPath = "/virtual/a.bond";
+        const string bPath = "/virtual/b.bond";
+        var files = new System.Collections.Generic.Dictionary<string, string>
+        {
+            [aPath] = """
+                import "b.bond"
+                namespace Test
+                struct A { 0: required int32 id; }
+            """,
+            [bPath] = """
+                import "a.bond"
+                namespace Test
+                struct B { 0: required int32 id; }
+            """
+        };
+
+        ImportResolver resolver = (currentFile, importPath) =>
+        {
+            var dir = System.IO.Path.GetDirectoryName(currentFile) ?? "/virtual";
+            var absolute = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, importPath));
+            return Task.FromResult((absolute, files[absolute]));
+        };
+
+        var result = await ParserFacade.ParseContentAsync(files[aPath], aPath, resolver);
+
+        // The important invariant: it terminates and returns something
+        result.Should().NotBeNull();
+    }
+
+    #endregion
+
     #region Issues
 
     [Fact]
@@ -969,6 +1120,80 @@ public class ParserFacadeTests
         fieldType.Should().NotBeNull();
         var alias = fieldType!.Declaration.Should().BeOfType<AliasDeclaration>().Subject;
         alias.AliasedType.Should().BeOfType<BondType.String>();
+    }
+
+    #endregion
+
+    #region Error locations
+
+    [Fact]
+    public async Task DuplicateFieldOrdinal_Error_HasSourceLocation()
+    {
+        var input = """
+            namespace Test
+            struct User {
+                0: required string id;
+                0: required string name;
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Line.Should().BeGreaterThan(0);
+        error.Column.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task UnresolvedType_Error_HasSourceLocation()
+    {
+        var input = """
+            namespace Test
+            struct User {
+                0: required NoSuchType id;
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Line.Should().BeGreaterThan(0);
+        error.Column.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task RequiredEnumField_WithoutDefault_IsValid()
+    {
+        var input = """
+            namespace Test
+            enum Status { Active = 0 }
+            struct User { 0: required Status field; }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task OptionalEnumField_WithoutDefault_FailsWithLocation()
+    {
+        var input = """
+            namespace Test
+            enum Status { Active = 0 }
+            struct User {
+                0: optional Status field;
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeFalse();
+        var error = result.Errors.Should().ContainSingle().Subject;
+        error.Message.Should().Contain("must have a default value");
+        error.Line.Should().BeGreaterThan(0);
     }
 
     #endregion

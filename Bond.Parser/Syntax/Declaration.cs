@@ -8,6 +8,7 @@ public abstract record Declaration
     public required Namespace[] Namespaces { get; init; }
     public required string Name { get; init; }
     public required TypeParam[] TypeParameters { get; init; }
+    public SourceLocation Location { get; init; } = SourceLocation.Unknown;
 
     /// <summary>
     /// Gets the qualified name for display purposes

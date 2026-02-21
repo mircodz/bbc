@@ -199,76 +199,94 @@ public class CompatibilityChecker
     {
         var location = $"enum {oldEnum.Name}";
 
-        var oldConstants = oldEnum.Constants.ToList();
-        var newConstants = newEnum.Constants.ToList();
+        // Compute effective integer values, resolving implicit (auto-incremented) constants.
+        // The rule from Bond's schema evolution docs: adding constants that don't alter the
+        // effective integer value of any existing constant is safe; anything else is breaking.
+        var oldEffective = EffectiveValues(oldEnum.Constants);
+        var newEffective = EffectiveValues(newEnum.Constants);
 
-        var oldByName = oldConstants.ToDictionary(c => c.Name, c => c);
-        var newByName = newConstants.ToDictionary(c => c.Name, c => c);
+        var oldByName = oldEnum.Constants
+            .Select((c, i) => (c.Name, Value: oldEffective[i]))
+            .ToDictionary(x => x.Name, x => x.Value);
+        var newByName = newEnum.Constants
+            .Select((c, i) => (c.Name, Value: newEffective[i]))
+            .ToDictionary(x => x.Name, x => x.Value);
 
-        foreach (var oldConst in oldConstants)
+        foreach (var (name, _) in oldByName)
         {
-            if (!newByName.ContainsKey(oldConst.Name))
+            if (!newByName.ContainsKey(name))
             {
                 changes.Add(new SchemaChange(
                     ChangeCategory.BreakingWire,
-                    $"Enum constant '{oldConst.Name}' was removed",
-                    $"{location}.{oldConst.Name}",
+                    $"Enum constant '{name}' was removed",
+                    $"{location}.{name}",
                     "Removing enum constants breaks compatibility"));
             }
         }
 
-        foreach (var newConst in newConstants)
+        foreach (var (name, newValue) in newByName)
         {
-            if (!oldByName.ContainsKey(newConst.Name))
+            if (!oldByName.ContainsKey(name))
             {
-                // Adding a constant without an explicit value in the middle shifts
-                // all subsequent implicit values, which is wire-breaking.
-                var newIndex = newConstants.IndexOf(newConst);
-                var couldReorder = newIndex < oldConstants.Count && !newConst.Value.HasValue;
+                // A new constant whose effective integer value collides with an existing
+                // constant causes non-deterministic round-tripping (same integer → two names).
+                var colliding = oldByName
+                    .Where(kv => kv.Value == newValue)
+                    .Select(kv => kv.Key)
+                    .FirstOrDefault();
 
-                var category = couldReorder ? ChangeCategory.BreakingWire : ChangeCategory.Compatible;
-                var recommendation = couldReorder
-                    ? "Adding constant without explicit value in the middle can cause implicit reordering"
+                var category = colliding != null ? ChangeCategory.BreakingWire : ChangeCategory.Compatible;
+                var recommendation = colliding != null
+                    ? $"New constant '{name}' has effective value {newValue} which collides with existing constant '{colliding}'"
                     : null;
 
                 changes.Add(new SchemaChange(
                     category,
-                    $"Enum constant '{newConst.Name}' was added",
-                    $"{location}.{newConst.Name}",
+                    $"Enum constant '{name}' was added",
+                    $"{location}.{name}",
                     recommendation));
             }
         }
 
-        foreach (var (name, oldConst) in oldByName)
+        foreach (var (name, oldValue) in oldByName)
         {
-            if (newByName.TryGetValue(name, out var newConst))
+            if (newByName.TryGetValue(name, out var newValue) && oldValue != newValue)
             {
-                if (oldConst.Value != newConst.Value)
-                {
-                    changes.Add(new SchemaChange(
-                        ChangeCategory.BreakingWire,
-                        $"Enum constant '{name}' value changed from {oldConst.Value} to {newConst.Value}",
-                        $"{location}.{name}",
-                        "Changing enum constant values breaks compatibility"));
-                }
-
-                var oldIndex = oldConstants.IndexOf(oldConst);
-                var newIndex = newConstants.IndexOf(newConst);
-                if (oldIndex != newIndex)
-                {
-                    changes.Add(new SchemaChange(
-                        ChangeCategory.BreakingWire,
-                        $"Enum constant '{name}' position changed (implicit reordering)",
-                        $"{location}.{name}",
-                        "Reordering enum constants can change implicit values"));
-                }
+                changes.Add(new SchemaChange(
+                    ChangeCategory.BreakingWire,
+                    $"Enum constant '{name}' value changed from {oldValue} to {newValue}",
+                    $"{location}.{name}",
+                    "Changing enum constant values breaks compatibility"));
             }
         }
+    }
+
+    private static long[] EffectiveValues(Constant[] constants)
+    {
+        var values = new long[constants.Length];
+        long next = 0;
+        for (int i = 0; i < constants.Length; i++)
+        {
+            values[i] = constants[i].Value ?? next;
+            next = values[i] + 1;
+        }
+        return values;
     }
 
     private void CompareServices(ServiceDeclaration oldService, ServiceDeclaration newService, List<SchemaChange> changes)
     {
         var location = $"service {oldService.Name}";
+
+        var oldBase = oldService.BaseType?.ToString() ?? "";
+        var newBase = newService.BaseType?.ToString() ?? "";
+        if (oldBase != newBase)
+        {
+            changes.Add(new SchemaChange(
+                ChangeCategory.BreakingWire,
+                $"Inheritance changed from '{(oldService.BaseType != null ? oldBase : "none")}' to '{(newService.BaseType != null ? newBase : "none")}'",
+                location,
+                "Changing service inheritance breaks compatibility"));
+        }
 
         var oldMethods = oldService.Methods.ToDictionary(m => m.Name, m => m);
         var newMethods = newService.Methods.ToDictionary(m => m.Name, m => m);
@@ -315,10 +333,12 @@ public class CompatibilityChecker
     {
         if (!TypesEqual(oldAlias.AliasedType, newAlias.AliasedType))
         {
+            var typeChange = ClassifyTypeChange(oldAlias.AliasedType, newAlias.AliasedType);
             changes.Add(new SchemaChange(
-                ChangeCategory.BreakingWire,
+                typeChange.Category,
                 $"Alias type changed from {oldAlias.AliasedType} to {newAlias.AliasedType}",
-                $"alias {oldAlias.Name}"));
+                $"alias {oldAlias.Name}",
+                typeChange.Recommendation));
         }
     }
 

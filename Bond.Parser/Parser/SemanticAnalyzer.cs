@@ -111,39 +111,34 @@ public class SemanticAnalyzer
 
     private void ValidateStruct(StructDeclaration structDecl)
     {
-        CheckForDuplicates(structDecl.Fields.Select(f => f.Ordinal), $"Struct '{structDecl.Name}'", "field ordinal");
-        CheckForDuplicates(structDecl.Fields.Select(f => f.Name), $"Struct '{structDecl.Name}'", "field name");
+        CheckForDuplicates(structDecl.Fields.Select(f => f.Ordinal), $"Struct '{structDecl.Name}'", "field ordinal", structDecl.Location);
+        CheckForDuplicates(structDecl.Fields.Select(f => f.Name), $"Struct '{structDecl.Name}'", "field name", structDecl.Location);
 
         foreach (var field in structDecl.Fields)
         {
-            if (!TypeValidator.IsValidOrdinal(field.Ordinal))
-            {
-                throw new InvalidOperationException($"Field '{field.Name}' has invalid ordinal {field.Ordinal}");
-            }
-
             ValidateField(field, structDecl.Namespaces);
         }
     }
 
     private void ValidateEnum(EnumDeclaration enumDecl)
     {
-        CheckForDuplicates(enumDecl.Constants.Select(c => c.Name), $"Enum '{enumDecl.Name}'", "constant name");
+        CheckForDuplicates(enumDecl.Constants.Select(c => c.Name), $"Enum '{enumDecl.Name}'", "constant name", enumDecl.Location);
     }
 
     private void ValidateService(ServiceDeclaration serviceDecl)
     {
-        CheckForDuplicates(serviceDecl.Methods.Select(m => m.Name), $"Service '{serviceDecl.Name}'", "method name");
+        CheckForDuplicates(serviceDecl.Methods.Select(m => m.Name), $"Service '{serviceDecl.Name}'", "method name", serviceDecl.Location);
 
         if (serviceDecl.BaseType != null)
         {
             if (serviceDecl.BaseType is BondType.TypeParameter)
             {
-                throw new InvalidOperationException($"Service '{serviceDecl.Name}' cannot inherit from type parameter");
+                throw new SemanticErrorException($"Service '{serviceDecl.Name}' cannot inherit from type parameter", serviceDecl.Location);
             }
 
             if (serviceDecl.BaseType.IsStruct())
             {
-                throw new InvalidOperationException($"Service '{serviceDecl.Name}' cannot inherit from struct");
+                throw new SemanticErrorException($"Service '{serviceDecl.Name}' cannot inherit from struct", serviceDecl.Location);
             }
 
             if (serviceDecl.BaseType is BondType.UnresolvedUserType unresolved)
@@ -151,7 +146,7 @@ public class SemanticAnalyzer
                 var baseDecl = _symbolTable.FindSymbol(unresolved.QualifiedName, serviceDecl.Namespaces);
                 if (baseDecl is StructDeclaration)
                 {
-                    throw new InvalidOperationException($"Service '{serviceDecl.Name}' cannot inherit from struct '{string.Join(".", unresolved.QualifiedName)}'");
+                    throw new SemanticErrorException($"Service '{serviceDecl.Name}' cannot inherit from struct '{string.Join(".", unresolved.QualifiedName)}'", serviceDecl.Location);
                 }
             }
         }
@@ -160,12 +155,12 @@ public class SemanticAnalyzer
         {
             if (method.InputType is MethodType.Streaming)
             {
-                throw new InvalidOperationException($"Event method '{method.Name}' cannot have streaming input");
+                throw new SemanticErrorException($"Event method '{method.Name}' cannot have streaming input", serviceDecl.Location);
             }
         }
     }
 
-    private static void CheckForDuplicates<T>(IEnumerable<T> items, string context, string itemType)
+    private static void CheckForDuplicates<T>(IEnumerable<T> items, string context, string itemType, SourceLocation location)
     {
         var duplicates = items
             .GroupBy(x => x)
@@ -175,7 +170,7 @@ public class SemanticAnalyzer
 
         if (duplicates.Any())
         {
-            throw new InvalidOperationException($"{context} has duplicate {itemType}(s): {string.Join(", ", duplicates)}");
+            throw new SemanticErrorException($"{context} has duplicate {itemType}(s): {string.Join(", ", duplicates)}", location);
         }
     }
 
@@ -228,40 +223,30 @@ public class SemanticAnalyzer
         // Validate map/set key types
         if (actualType is BondType.Set set && !TypeValidator.IsValidKeyType(set.KeyType))
         {
-            throw new InvalidOperationException($"Field '{field.Name}' has invalid set key type {set.KeyType}");
+            throw new SemanticErrorException($"Field '{field.Name}' has invalid set key type {set.KeyType}", field.Location);
         }
         if (actualType is BondType.Map map && !TypeValidator.IsValidKeyType(map.KeyType))
         {
-            throw new InvalidOperationException($"Field '{field.Name}' has invalid map key type {map.KeyType}");
+            throw new SemanticErrorException($"Field '{field.Name}' has invalid map key type {map.KeyType}", field.Location);
         }
 
         if (!TypeValidator.ValidateDefaultValue(actualType, field.DefaultValue))
         {
-            throw new InvalidOperationException($"Field '{field.Name}' has invalid default value for type {field.Type}");
+            throw new SemanticErrorException($"Field '{field.Name}' has invalid default value for type {field.Type}", field.Location);
         }
 
-        bool isEnumField = field.Type.IsEnum();
-        if (field.Type is BondType.UnresolvedUserType unresolvedEnum)
+        bool isEnumField = actualType.IsEnum();
+        if (!isEnumField && field.Type is BondType.UnresolvedUserType unresolvedEnum)
         {
             var decl = _symbolTable.FindSymbol(unresolvedEnum.QualifiedName, namespaces);
             if (decl is EnumDeclaration)
-            {
                 isEnumField = true;
-            }
         }
 
         if (isEnumField && field.DefaultValue == null && field.Modifier != FieldModifier.Required)
         {
-            throw new InvalidOperationException($"Enum field '{field.Name}' must have a default value");
+            throw new SemanticErrorException($"Enum field '{field.Name}' must have a default value", field.Location);
         }
-
-        // Centralized enum field validation for resolved enums
-        if (actualType.IsEnum())
-        {
-            TypeValidator.ValidateEnumField(field);
-        }
-
-        TypeValidator.ValidateStructField(field);
 
         // Structs cannot have default 'nothing' even when wrapped in Maybe
         if (field.DefaultValue is Default.Nothing)
@@ -269,7 +254,7 @@ public class SemanticAnalyzer
             var underlying = UnwrapMaybe(field.Type);
             if (IsStructType(underlying, namespaces))
             {
-                throw new InvalidOperationException($"Struct field '{field.Name}' cannot have default value of 'nothing'");
+                throw new SemanticErrorException($"Struct field '{field.Name}' cannot have default value of 'nothing'", field.Location);
             }
         }
     }
