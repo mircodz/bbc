@@ -85,8 +85,7 @@ public static class TypeValidator
     {
         if (field.Type.IsEnum() && field.DefaultValue == null)
         {
-            throw new InvalidOperationException(
-                $"Enum field '{field.Name}' must have a default value");
+            throw new InvalidOperationException($"Enum field '{field.Name}' must have a default value");
         }
     }
 
@@ -97,8 +96,7 @@ public static class TypeValidator
     {
         if (field.Type.IsStruct() && field.DefaultValue is Default.Nothing)
         {
-            throw new InvalidOperationException(
-                $"Struct field '{field.Name}' cannot have default value of 'nothing'");
+            throw new InvalidOperationException($"Struct field '{field.Name}' cannot have default value of 'nothing'");
         }
     }
 }

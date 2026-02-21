@@ -11,66 +11,33 @@ namespace Bond.Parser.Parser;
 public class TypeResolver(SymbolTable symbolTable)
 {
     /// <summary>
-    /// Resolves all types in the AST, returning a new Bond AST with resolved types
-    /// Multi-pass resolution to handle aliases that reference other aliases
+    /// Resolves all UnresolvedUserType references in the AST, returning a new Bond AST
+    /// with concrete UserDefined types. A single pass suffices: SemanticAnalyzer has
+    /// already populated the symbol table with every declaration (including all imports),
+    /// and ResolveUnresolvedType handles alias chains recursively within one traversal.
+    /// If a referenced type cannot be found, ResolveUnresolvedType throws immediately.
     /// </summary>
     public Syntax.Bond ResolveTypes(Syntax.Bond ast)
     {
-        var currentAst = ast;
-        const int maxPasses = 10; // Prevent infinite loops
-
-        // Preserve declarations that came from imports so we can re-add them each pass
+        // SemanticAnalyzer pops the alias scope when it returns, so we rebuild it here
+        // so that FindAlias can locate alias declarations during resolution.
         var importedDeclarations = symbolTable.GlobalDeclarations
             .Where(d => !ast.Declarations.Contains(d))
             .ToArray();
 
-        for (int pass = 0; pass < maxPasses; pass++)
-        {
-            // Update symbol table with current declarations
-            symbolTable.ClearGlobalDeclarations();
-            symbolTable.ClearAliasScopes();
-            symbolTable.PushAliasScope();
-            foreach (var importDecl in importedDeclarations)
-            {
-                symbolTable.AddDeclaration(importDecl);
-            }
-            foreach (var decl in currentAst.Declarations)
-            {
-                symbolTable.AddDeclaration(decl);
-            }
+        symbolTable.ClearGlobalDeclarations();
+        symbolTable.ClearAliasScopes();
+        symbolTable.PushAliasScope();
+        foreach (var importDecl in importedDeclarations)
+            symbolTable.AddDeclaration(importDecl);
+        foreach (var decl in ast.Declarations)
+            symbolTable.AddDeclaration(decl);
 
-            // Resolve all declarations
-            var resolvedDeclarations = currentAst.Declarations
-                .Select(decl => ResolveDeclaration(decl, currentAst.Namespaces))
-                .ToArray();
+        var resolvedDeclarations = ast.Declarations
+            .Select(decl => ResolveDeclaration(decl, ast.Namespaces))
+            .ToArray();
 
-            var newAst = currentAst with { Declarations = resolvedDeclarations };
-
-            // Check if anything changed
-            if (DeclarationsEqual(currentAst.Declarations, newAst.Declarations))
-            {
-                return newAst; // No more changes, we're done
-            }
-
-            currentAst = newAst;
-        }
-
-        // If we hit max passes, still return what we have
-        return currentAst;
-    }
-
-    private static bool DeclarationsEqual(Declaration[] a, Declaration[] b)
-    {
-        if (a.Length != b.Length) return false;
-
-        for (int i = 0; i < a.Length; i++)
-        {
-            // Simple reference equality check - records will be different if types changed
-            if (!ReferenceEquals(a[i], b[i]))
-                return false;
-        }
-
-        return true;
+        return ast with { Declarations = resolvedDeclarations };
     }
 
     private Declaration ResolveDeclaration(Declaration declaration, Namespace[] namespaces)
