@@ -7,6 +7,7 @@ using Bond.Parser.Formatting;
 using Bond.Parser.Compatibility;
 using Bond.Parser.Json;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Bond.Parser.CLI;
@@ -328,7 +329,7 @@ public static class Program
             oldResult = await ParserFacade.ParseFileAsync(
                 oldSchema.FilePath,
                 oldSchema.ImportResolver,
-                default,
+                CancellationToken.None,
                 parseOptions);
         }
         if (!oldResult.Success)
@@ -399,7 +400,7 @@ public static class Program
         };
     }
 
-    static int OutputParseError(string errorFormat, List<ParseError> errors, string message, string filePath)
+    static int OutputParseError(string errorFormat, IReadOnlyList<ParseError> errors, string message, string filePath)
     {
         if (errorFormat == "json")
         {
@@ -428,7 +429,7 @@ public static class Program
         Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    static void OutputJsonErrors(string errorType, List<ParseError> errors, string message)
+    static void OutputJsonErrors(string errorType, IReadOnlyList<ParseError> errors, string message)
     {
         OutputJson(new
         {
