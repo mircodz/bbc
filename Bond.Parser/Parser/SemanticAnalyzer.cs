@@ -29,17 +29,30 @@ public class SemanticAnalyzer
     /// </summary>
     public async Task AnalyzeAsync(Syntax.Bond bond)
     {
-        // Process imports first
-        foreach (var import in bond.Imports)
+        _symbolTable.PushAliasScope();
+        try
         {
-            await ProcessImportAsync(import);
-        }
+            // Process imports first
+            foreach (var import in bond.Imports)
+            {
+                await ProcessImportAsync(import);
+            }
 
-        // Add all declarations to symbol table
-        foreach (var declaration in bond.Declarations)
+            // Add all declarations to symbol table
+            foreach (var declaration in bond.Declarations)
+            {
+                _symbolTable.AddDeclaration(declaration);
+            }
+
+            // Validate declarations after all symbols are registered
+            foreach (var declaration in bond.Declarations)
+            {
+                ValidateDeclaration(declaration);
+            }
+        }
+        finally
         {
-            _symbolTable.AddDeclaration(declaration, bond.Namespaces);
-            ValidateDeclaration(declaration);
+            _symbolTable.PopAliasScope();
         }
     }
 

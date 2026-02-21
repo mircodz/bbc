@@ -20,21 +20,23 @@ public class TypeResolver(SymbolTable symbolTable)
         const int maxPasses = 10; // Prevent infinite loops
 
         // Preserve declarations that came from imports so we can re-add them each pass
-        var importedDeclarations = symbolTable.Declarations
+        var importedDeclarations = symbolTable.GlobalDeclarations
             .Where(d => !ast.Declarations.Contains(d))
             .ToArray();
 
         for (int pass = 0; pass < maxPasses; pass++)
         {
             // Update symbol table with current declarations
-            symbolTable.Clear();
+            symbolTable.ClearGlobalDeclarations();
+            symbolTable.ClearAliasScopes();
+            symbolTable.PushAliasScope();
             foreach (var importDecl in importedDeclarations)
             {
-                symbolTable.AddDeclaration(importDecl, currentAst.Namespaces);
+                symbolTable.AddDeclaration(importDecl);
             }
             foreach (var decl in currentAst.Declarations)
             {
-                symbolTable.AddDeclaration(decl, currentAst.Namespaces);
+                symbolTable.AddDeclaration(decl);
             }
 
             // Resolve all declarations
