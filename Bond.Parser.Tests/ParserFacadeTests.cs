@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Threading.Tasks;
 using Bond.Parser.Parser;
 using Bond.Parser.Syntax;
@@ -938,6 +939,36 @@ public class ParserFacadeTests
         var result = await Parse(input);
 
         result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Alias_IsFileScoped_WhenImportDefinesSameAlias()
+    {
+        var input = """
+                        import "common.bond"
+                        namespace Test
+                        using ID = string;
+                        struct User { 0: required ID id; }
+                    """;
+
+        async Task<(string, string)> Resolver(string _, string importPath)
+        {
+            var content = """
+                              namespace Test
+                              using ID = int32;
+                              struct Other { 0: required ID id; }
+                          """;
+            return await Task.FromResult((importPath, content));
+        }
+
+        var result = await Parse(input, Resolver);
+
+        result.Success.Should().BeTrue();
+        var user = result.Ast!.Declarations.OfType<StructDeclaration>().First(d => d.Name == "User");
+        var fieldType = user.Fields[0].Type as BondType.UserDefined;
+        fieldType.Should().NotBeNull();
+        var alias = fieldType!.Declaration.Should().BeOfType<AliasDeclaration>().Subject;
+        alias.AliasedType.Should().BeOfType<BondType.String>();
     }
 
     #endregion

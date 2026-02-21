@@ -10,17 +10,24 @@ namespace Bond.Parser.Parser;
 /// </summary>
 public class SymbolTable
 {
-    private readonly List<Declaration> _declarations = [];
+    private readonly List<Declaration> _globalDeclarations = [];
+    private readonly Stack<List<AliasDeclaration>> _aliasScopes = new();
     private readonly HashSet<string> _processedImports = [];
 
     /// <summary>
     /// Adds a declaration to the symbol table with duplicate checking
     /// </summary>
-    public void AddDeclaration(Declaration declaration, Namespace[] currentNamespaces)
+    public void AddDeclaration(Declaration declaration)
     {
+        if (declaration is AliasDeclaration alias)
+        {
+            AddAliasDeclaration(alias);
+            return;
+        }
+
         // Find duplicates in the same namespace
-        var duplicates = _declarations
-            .Where(d => d.Name == declaration.Name && d.Namespaces.Any(ns1 => currentNamespaces.Any(ns2 => NamespacesMatch(ns1, ns2))))
+        var duplicates = _globalDeclarations
+            .Where(d => d.Name == declaration.Name && d.Namespaces.Any(ns1 => declaration.Namespaces.Any(ns2 => NamespacesMatch(ns1, ns2))))
             .ToList();
 
         foreach (var duplicate in duplicates)
@@ -33,7 +40,7 @@ public class SymbolTable
             }
         }
 
-        _declarations.Add(declaration);
+        _globalDeclarations.Add(declaration);
     }
 
     /// <summary>
@@ -41,10 +48,24 @@ public class SymbolTable
     /// </summary>
     public Declaration? FindSymbol(string[] qualifiedName, Namespace[] currentNamespaces)
     {
+        var alias = FindAlias(qualifiedName, currentNamespaces);
+        if (alias != null)
+        {
+            return alias;
+        }
+
+        return FindGlobalSymbol(qualifiedName, currentNamespaces);
+    }
+
+    /// <summary>
+    /// Finds a symbol by qualified name in the given namespaces from global declarations
+    /// </summary>
+    private Declaration? FindGlobalSymbol(string[] qualifiedName, Namespace[] currentNamespaces)
+    {
         if (qualifiedName.Length == 1)
         {
             // Unqualified name - search in current namespaces
-            return _declarations.FirstOrDefault(d =>
+            return _globalDeclarations.FirstOrDefault(d =>
                 d.Name == qualifiedName[0] &&
                 d.Namespaces.Any(ns1 => currentNamespaces.Any(ns2 => NamespacesMatch(ns1, ns2))));
         }
@@ -54,7 +75,7 @@ public class SymbolTable
             var namespacePart = qualifiedName[..^1];
             var namePart = qualifiedName[^1];
 
-            return _declarations.FirstOrDefault(d =>
+            return _globalDeclarations.FirstOrDefault(d =>
                 d.Name == namePart &&
                 d.Namespaces.Any(ns => ns.Name.SequenceEqual(namespacePart)));
         }
@@ -65,7 +86,7 @@ public class SymbolTable
     /// </summary>
     public StructDeclaration? FindStruct(string[] qualifiedName, Namespace[] currentNamespaces)
     {
-        var symbol = FindSymbol(qualifiedName, currentNamespaces);
+        var symbol = FindGlobalSymbol(qualifiedName, currentNamespaces);
         return symbol as StructDeclaration;
     }
 
@@ -88,15 +109,87 @@ public class SymbolTable
     /// <summary>
     /// Gets all declarations
     /// </summary>
-    public IReadOnlyList<Declaration> Declarations => _declarations.AsReadOnly();
+    public IReadOnlyList<Declaration> GlobalDeclarations => _globalDeclarations.AsReadOnly();
+
+    /// <summary>
+    /// Pushes a new alias scope for a file.
+    /// </summary>
+    public void PushAliasScope()
+    {
+        _aliasScopes.Push([]);
+    }
+
+    /// <summary>
+    /// Pops the current alias scope.
+    /// </summary>
+    public void PopAliasScope()
+    {
+        if (_aliasScopes.Count == 0)
+        {
+            throw new InvalidOperationException("Alias scope stack is empty");
+        }
+
+        _aliasScopes.Pop();
+    }
 
     /// <summary>
     /// Clears all declarations from the symbol table
     /// </summary>
-    public void Clear()
+    public void ClearGlobalDeclarations()
     {
-        _declarations.Clear();
-        // Don't clear processed imports as those are still valid
+        _globalDeclarations.Clear();
+    }
+
+    /// <summary>
+    /// Clears all alias scopes
+    /// </summary>
+    public void ClearAliasScopes()
+    {
+        _aliasScopes.Clear();
+    }
+
+    private void AddAliasDeclaration(AliasDeclaration alias)
+    {
+        if (_aliasScopes.Count == 0)
+        {
+            throw new InvalidOperationException("Alias scope is not initialized");
+        }
+
+        var scope = _aliasScopes.Peek();
+        var duplicates = scope
+            .Where(d => d.Name == alias.Name && d.Namespaces.Any(ns1 => alias.Namespaces.Any(ns2 => NamespacesMatch(ns1, ns2))))
+            .ToList();
+
+        if (duplicates.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Duplicate declaration: alias '{alias.Name}' was already declared as alias");
+        }
+
+        scope.Add(alias);
+    }
+
+    private AliasDeclaration? FindAlias(string[] qualifiedName, Namespace[] currentNamespaces)
+    {
+        if (_aliasScopes.Count == 0)
+        {
+            return null;
+        }
+
+        var scope = _aliasScopes.Peek();
+
+        if (qualifiedName.Length == 1)
+        {
+            return scope.FirstOrDefault(d =>
+                d.Name == qualifiedName[0] &&
+                d.Namespaces.Any(ns1 => currentNamespaces.Any(ns2 => NamespacesMatch(ns1, ns2))));
+        }
+
+        var namespacePart = qualifiedName[..^1];
+        var namePart = qualifiedName[^1];
+        return scope.FirstOrDefault(d =>
+            d.Name == namePart &&
+            d.Namespaces.Any(ns => ns.Name.SequenceEqual(namespacePart)));
     }
 
     private static bool NamespacesMatch(Namespace ns1, Namespace ns2)
