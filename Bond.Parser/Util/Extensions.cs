@@ -1,56 +1,26 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace Bond.Parser.Util;
 
 public static class Extensions
 {
+    private static readonly Dictionary<Type, (BigInteger Min, BigInteger Max)> Bounds = new()
+    {
+        [typeof(sbyte)]  = (sbyte.MinValue,  sbyte.MaxValue),
+        [typeof(byte)]   = (byte.MinValue,   byte.MaxValue),
+        [typeof(short)]  = (short.MinValue,  short.MaxValue),
+        [typeof(ushort)] = (ushort.MinValue, ushort.MaxValue),
+        [typeof(int)]    = (int.MinValue,    int.MaxValue),
+        [typeof(uint)]   = (uint.MinValue,   uint.MaxValue),
+        [typeof(long)]   = (long.MinValue,   long.MaxValue),
+        [typeof(ulong)]  = (0,               ulong.MaxValue),
+    };
+
     /// <summary>
-    /// Checks if a BigInteger value is within the bounds of a specific integral type
+    /// Checks if a BigInteger value is within the bounds of a specific integral type.
     /// </summary>
-    public static bool IsInBounds<T>(this BigInteger value) where T : struct
-    {
-        var type = typeof(T);
-
-        if (type == typeof(ulong))
-        {
-            return value >= 0 && value <= ulong.MaxValue;
-        }
-
-        // For signed types, convert their bounds to BigInteger
-        var min = new BigInteger(Convert.ToInt64(GetMinValue<T>()));
-        var max = type == typeof(uint)
-            ? new BigInteger(uint.MaxValue)
-            : new BigInteger(Convert.ToInt64(GetMaxValue<T>()));
-
-        return value >= min && value <= max;
-    }
-
-    private static object GetMinValue<T>() where T : struct
-    {
-        var type = typeof(T);
-        if (type == typeof(sbyte)) return sbyte.MinValue;
-        if (type == typeof(byte)) return byte.MinValue;
-        if (type == typeof(short)) return short.MinValue;
-        if (type == typeof(ushort)) return ushort.MinValue;
-        if (type == typeof(int)) return int.MinValue;
-        if (type == typeof(uint)) return uint.MinValue;
-        if (type == typeof(long)) return long.MinValue;
-        if (type == typeof(ulong)) return (long)0;
-        throw new NotSupportedException($"Type {type} is not supported");
-    }
-
-    private static object GetMaxValue<T>() where T : struct
-    {
-        var type = typeof(T);
-        if (type == typeof(sbyte)) return sbyte.MaxValue;
-        if (type == typeof(byte)) return byte.MaxValue;
-        if (type == typeof(short)) return short.MaxValue;
-        if (type == typeof(ushort)) return ushort.MaxValue;
-        if (type == typeof(int)) return int.MaxValue;
-        if (type == typeof(uint)) return uint.MaxValue;
-        if (type == typeof(long)) return long.MaxValue;
-        if (type == typeof(ulong)) return long.MaxValue; // Approximation
-        throw new NotSupportedException($"Type {type} is not supported");
-    }
+    public static bool IsInBounds<T>(this BigInteger value) where T : struct =>
+        Bounds.TryGetValue(typeof(T), out var b) && value >= b.Min && value <= b.Max;
 }
