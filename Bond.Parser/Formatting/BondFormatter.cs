@@ -31,7 +31,7 @@ public static class BondFormatter
             parser.RemoveErrorListeners();
             parser.AddErrorListener(errorListener);
 
-            parser.bond();
+            var bondCtx = parser.bond();
             if (errorListener.Errors.Count > 0)
             {
                 errors.AddRange(errorListener.Errors);
@@ -39,8 +39,8 @@ public static class BondFormatter
             }
 
             tokenStream.Fill();
-            var formatter = new TokenFormatter(tokenStream, options ?? new FormatOptions());
-            var formatted = formatter.Format();
+            var formatter = new ParseTreeFormatter(tokenStream, options ?? new FormatOptions());
+            var formatted = formatter.Format(bondCtx);
             return new FormatResult(formatted, errors);
         }
         catch (Exception ex)
@@ -50,451 +50,504 @@ public static class BondFormatter
         }
     }
 
-    private sealed class TokenFormatter
+    private sealed class ParseTreeFormatter
     {
-        private static readonly HashSet<int> NoSpaceBefore =
-        [
-            BondLexer.COMMA,
-            BondLexer.SEMI,
-            BondLexer.RPAREN,
-            BondLexer.RBRACKET,
-            BondLexer.RANGLE,
-            BondLexer.LANGLE,
-            BondLexer.LPAREN,
-            BondLexer.DOT,
-            BondLexer.COLON,
-            BondLexer.RBRACE
-        ];
+        private readonly CommonTokenStream _tokens;
+        private readonly string _indent;
 
-        private static readonly HashSet<int> NoSpaceAfter =
-        [
-            BondLexer.LPAREN,
-            BondLexer.LBRACKET,
-            BondLexer.RBRACKET,
-            BondLexer.LANGLE,
-            BondLexer.DOT,
-            BondLexer.MINUS,
-            BondLexer.PLUS,
-            BondLexer.L
-        ];
+        private readonly Dictionary<int, List<IToken>> _standaloneLeading = new();
+        private readonly Dictionary<int, List<IToken>> _inlineLeading = new();
+        private readonly Dictionary<int, IToken> _trailing = new();
 
-        private static readonly HashSet<int> TopLevelStartTokens =
-        [
-            BondLexer.IMPORT,
-            BondLexer.NAMESPACE,
-            BondLexer.USING,
-            BondLexer.STRUCT,
-            BondLexer.ENUM,
-            BondLexer.SERVICE,
-            BondLexer.VIEW_OF,
-            BondLexer.LBRACKET
-        ];
-
-        private readonly CommonTokenStream _tokenStream;
-        private readonly FormatOptions _options;
-        private readonly StringBuilder _builder = new();
-        private readonly List<IToken> _defaultTokens;
-        private bool _atLineStart = true;
-        private bool _pendingSpace;
-        private int _indentLevel;
-        private bool _pendingTopLevelBlankLine;
-        private int? _lastTopLevelKeyword;
-        private bool _inTypeHeader;
-        private int? _pendingBlockKind;
-        private readonly Stack<int?> _blockStack = new();
-        private IToken? _lastToken;
-        private bool _skipNextRBrace;
-        private bool _skipNextSemi;
-
-        public TokenFormatter(CommonTokenStream tokenStream, FormatOptions options)
+        public ParseTreeFormatter(CommonTokenStream tokens, FormatOptions options)
         {
-            _tokenStream = tokenStream;
-            _options = options;
-            _defaultTokens = tokenStream.GetTokens()
-                .Where(t => t.Channel == TokenConstants.DefaultChannel && t.Type != TokenConstants.EOF)
-                .ToList();
+            _tokens = tokens;
+            _indent = new string(' ', options.IndentSize);
+            BuildCommentMap();
         }
 
-        public string Format()
+        private void BuildCommentMap()
         {
-            for (int i = 0; i < _defaultTokens.Count; i++)
-            {
-                var token = _defaultTokens[i];
-                var nextType = i + 1 < _defaultTokens.Count ? _defaultTokens[i + 1].Type : TokenConstants.EOF;
+            var allTokens = _tokens.GetTokens();
+            IToken? prevDefault = null;
 
-                if (_skipNextRBrace && token.Type == BondLexer.RBRACE)
+            for (int i = 0; i < allTokens.Count; i++)
+            {
+                var tok = allTokens[i];
+                if (tok.Channel == TokenConstants.DefaultChannel)
                 {
-                    _skipNextRBrace = false;
-                    if (nextType == BondLexer.SEMI)
+                    prevDefault = tok;
+                }
+                else if (tok.Type == BondLexer.LINE_COMMENT || tok.Type == BondLexer.COMMENT)
+                {
+                    IToken? nextDefault = null;
+                    for (int j = i + 1; j < allTokens.Count; j++)
                     {
-                        _skipNextSemi = true;
-                    }
-                    _lastToken = token;
-                    continue;
-                }
-                if (_skipNextSemi && token.Type == BondLexer.SEMI)
-                {
-                    ProcessHiddenTokens(token);
-                    _skipNextSemi = false;
-                    _lastToken = token;
-                    continue;
-                }
-
-                ProcessHiddenTokens(token);
-                WriteToken(token, nextType);
-            }
-
-            if (!_atLineStart)
-            {
-                WriteNewline();
-            }
-
-            var text = _builder.ToString();
-            if (text.EndsWith('\n'))
-            {
-                text = text[..^1];
-            }
-            return text;
-        }
-
-        private void ProcessHiddenTokens(IToken token)
-        {
-            var hidden = _tokenStream.GetHiddenTokensToLeft(token.TokenIndex);
-            if (hidden == null || hidden.Count == 0)
-            {
-                return;
-            }
-
-            foreach (var ht in hidden)
-            {
-                if (ht.Type == BondLexer.WS)
-                {
-                    continue;
-                }
-
-                if (ht.Type == BondLexer.LINE_COMMENT || ht.Type == BondLexer.COMMENT)
-                {
-                    var inlineBefore = ht.Type == BondLexer.COMMENT && ht.Line == token.Line;
-                    var inlineAfter = _lastToken != null && ht.Line == _lastToken.Line;
-
-                    if (inlineBefore || inlineAfter)
-                    {
-                        if (_atLineStart)
+                        if (allTokens[j].Channel == TokenConstants.DefaultChannel &&
+                            allTokens[j].Type != TokenConstants.EOF)
                         {
-                            WriteIndent();
+                            nextDefault = allTokens[j];
+                            break;
                         }
-                        else
-                        {
-                            _builder.Append(' ');
-                        }
-
-                        _builder.Append(ht.Text.TrimEnd());
-
-                        if (ht.Type == BondLexer.LINE_COMMENT)
-                        {
-                            WriteNewline();
-                        }
-                        else
-                        {
-                            _pendingSpace = true;
-                        }
-
-                        continue;
                     }
 
-                    if (_pendingTopLevelBlankLine && _indentLevel == 0)
+                    if (tok.Type == BondLexer.COMMENT && nextDefault != null && tok.Line == nextDefault.Line)
                     {
-                        _pendingTopLevelBlankLine = false;
-                        EnsureBlankLine();
+                        if (!_inlineLeading.ContainsKey(nextDefault.TokenIndex))
+                            _inlineLeading[nextDefault.TokenIndex] = new List<IToken>();
+                        _inlineLeading[nextDefault.TokenIndex].Add(tok);
                     }
-
-                    if (!_atLineStart)
+                    else if (prevDefault != null && tok.Line == prevDefault.Line)
                     {
-                        WriteNewline();
+                        _trailing[prevDefault.TokenIndex] = tok;
                     }
-
-                    WriteIndent();
-                    _builder.Append(ht.Text.TrimEnd());
-                    WriteNewline();
+                    else if (nextDefault != null)
+                    {
+                        if (!_standaloneLeading.ContainsKey(nextDefault.TokenIndex))
+                            _standaloneLeading[nextDefault.TokenIndex] = new List<IToken>();
+                        _standaloneLeading[nextDefault.TokenIndex].Add(tok);
+                    }
                 }
             }
         }
 
-        private void WriteToken(IToken token, int nextType)
+        private void EmitStandaloneLeading(StringBuilder sb, int tokenIndex, string indent = "")
         {
-            ApplyTopLevelSpacingIfNeeded(token.Type);
-
-            int? closingBlockKind = null;
-            if (StartsTypeHeader(token.Type))
+            if (!_standaloneLeading.TryGetValue(tokenIndex, out var comments))
+                return;
+            foreach (var c in comments)
             {
-                _inTypeHeader = _indentLevel == 0;
+                sb.Append(indent);
+                sb.Append(c.Text.TrimEnd());
+                sb.Append('\n');
+            }
+        }
+
+        private void EmitInlineLeading(StringBuilder sb, int tokenIndex)
+        {
+            if (!_inlineLeading.TryGetValue(tokenIndex, out var comments))
+                return;
+            foreach (var c in comments)
+            {
+                sb.Append(c.Text.TrimEnd());
+                sb.Append(' ');
+            }
+        }
+
+        private bool HasComments(int tokenIndex)
+        {
+            var hidden = _tokens.GetHiddenTokensToRight(tokenIndex);
+            if (hidden == null) return false;
+            return hidden.Any(t => t.Type == BondLexer.LINE_COMMENT || t.Type == BondLexer.COMMENT);
+        }
+
+        public string Format(BondParser.BondContext ctx)
+        {
+            var sections = new List<string>();
+
+            var imports = ctx.import_();
+            if (imports.Length > 0)
+            {
+                var parts = new List<string>();
+                foreach (var imp in imports)
+                    parts.Add(FormatImport(imp));
+                sections.Add(string.Join("\n", parts));
             }
 
-            var declaredBlockKind = GetBlockKind(token.Type);
-            if (declaredBlockKind.HasValue)
+            var namespaces = ctx.@namespace();
+            if (namespaces.Length > 0)
             {
-                _pendingBlockKind = declaredBlockKind;
+                var parts = new List<string>();
+                foreach (var ns in namespaces)
+                    parts.Add(FormatNamespace(ns));
+                sections.Add(string.Join("\n", parts));
             }
 
-            if (token.Type == BondLexer.RBRACE)
+            var currentAliasGroup = new List<string>();
+            var declSections = new List<string>();
+
+            foreach (var decl in ctx.declaration())
             {
-                if (!_atLineStart)
+                if (decl.alias() != null)
                 {
-                    WriteNewline();
+                    currentAliasGroup.Add(FormatDeclaration(decl));
                 }
-                _indentLevel = Math.Max(0, _indentLevel - 1);
-                closingBlockKind = _blockStack.Count > 0 ? _blockStack.Pop() : null;
-            }
-
-            if (_atLineStart)
-            {
-                WriteIndent();
-            }
-            else if (_pendingSpace && (!NoSpaceBefore.Contains(token.Type) || (token.Type == BondLexer.COLON && _inTypeHeader)))
-            {
-                _builder.Append(' ');
-            }
-
-            _builder.Append(token.Text);
-            _pendingSpace = ShouldSetPendingSpace(token.Type);
-
-            if (token.Type == BondLexer.RBRACKET)
-            {
-                WriteNewline();
-                UpdateTopLevelKeyword(token.Type);
-                _lastToken = token;
-                return;
-            }
-            if ((token.Type == BondLexer.COMMA || token.Type == BondLexer.SEMI) && IsInsideEnumBlock())
-            {
-                WriteNewline();
-            }
-            if (token.Type == BondLexer.NAMESPACE && _indentLevel == 0)
-            {
-                _pendingTopLevelBlankLine = true;
-            }
-
-            if (token.Type == BondLexer.LBRACE)
-            {
-                var blockKind = _pendingBlockKind;
-                _pendingBlockKind = null;
-                if (blockKind == BondLexer.STRUCT && IsEmptyBlock(token, nextType))
+                else
                 {
-                    _builder.Append('}');
-                    _skipNextRBrace = true;
-                    WriteNewline();
-                    _pendingTopLevelBlankLine |= _indentLevel == 0;
-                    _inTypeHeader = false;
-                    _lastToken = token;
-                    return;
+                    if (currentAliasGroup.Count > 0)
+                    {
+                        declSections.Add(string.Join("\n", currentAliasGroup));
+                        currentAliasGroup.Clear();
+                    }
+                    declSections.Add(FormatDeclaration(decl));
                 }
-
-                WriteNewline();
-                _blockStack.Push(blockKind);
-                _indentLevel++;
-                _inTypeHeader = false;
-                UpdateTopLevelKeyword(token.Type);
-                _lastToken = token;
-                return;
             }
 
-            if (token.Type == BondLexer.SEMI)
+            if (currentAliasGroup.Count > 0)
+                declSections.Add(string.Join("\n", currentAliasGroup));
+
+            sections.AddRange(declSections);
+            return string.Join("\n\n", sections);
+        }
+
+        private string FormatImport(BondParser.Import_Context ctx)
+        {
+            var sb = new StringBuilder();
+            EmitStandaloneLeading(sb, ctx.Start.TokenIndex);
+            sb.Append($"import {ctx.STRING_LITERAL().GetText()};");
+            return sb.ToString();
+        }
+
+        private string FormatNamespace(BondParser.NamespaceContext ctx)
+        {
+            var sb = new StringBuilder();
+            EmitStandaloneLeading(sb, ctx.Start.TokenIndex);
+            var lang = ctx.language() != null ? $" {ctx.language().GetText()}" : "";
+            sb.Append($"namespace{lang} {ctx.qualifiedName().GetText()}");
+            return sb.ToString();
+        }
+
+        private string FormatDeclaration(BondParser.DeclarationContext ctx)
+        {
+            if (ctx.structDecl() != null) return FormatStruct(ctx.structDecl());
+            if (ctx.@enum() != null) return FormatEnum(ctx.@enum());
+            if (ctx.service() != null) return FormatService(ctx.service());
+            if (ctx.alias() != null) return FormatAlias(ctx.alias());
+            if (ctx.forward() != null) return FormatForward(ctx.forward());
+            return ctx.GetText();
+        }
+
+        private string FormatAlias(BondParser.AliasContext ctx)
+        {
+            var sb = new StringBuilder();
+            EmitStandaloneLeading(sb, ctx.Start.TokenIndex);
+            var typeParams = ctx.typeParameters() != null ? FormatTypeParameters(ctx.typeParameters()) : "";
+            sb.Append($"using {ctx.identifier().GetText()}{typeParams} = {FormatType(ctx.type())};");
+            return sb.ToString();
+        }
+
+        private string FormatForward(BondParser.ForwardContext ctx)
+        {
+            var sb = new StringBuilder();
+            EmitStandaloneLeading(sb, ctx.Start.TokenIndex);
+            var typeParams = ctx.typeParameters() != null ? FormatTypeParameters(ctx.typeParameters()) : "";
+            sb.Append($"struct {ctx.identifier().GetText()}{typeParams};");
+            return sb.ToString();
+        }
+
+        private string FormatStruct(BondParser.StructDeclContext ctx)
+        {
+            var sb = new StringBuilder();
+            EmitStandaloneLeading(sb, ctx.Start.TokenIndex);
+
+            if (ctx.attributes() != null)
             {
-                if (_indentLevel == 0)
+                var attrs = ctx.attributes().attribute();
+                for (int i = 0; i < attrs.Length; i++)
                 {
-                    _pendingTopLevelBlankLine = true;
+                    if (attrs[i].Start.TokenIndex != ctx.Start.TokenIndex)
+                        EmitStandaloneLeading(sb, attrs[i].Start.TokenIndex);
+                    sb.Append(FormatAttribute(attrs[i]));
+                    sb.Append('\n');
                 }
-                WriteNewline();
-                _inTypeHeader = false;
-                UpdateTopLevelKeyword(token.Type);
-                _lastToken = token;
-                return;
             }
 
-            if (token.Type == BondLexer.RBRACE)
+            var name = ctx.identifier().GetText();
+            var typeParams = ctx.typeParameters() != null ? FormatTypeParameters(ctx.typeParameters()) : "";
+
+            if (ctx.structDef() != null)
             {
-                if (nextType == BondLexer.SEMI && (closingBlockKind == BondLexer.STRUCT || closingBlockKind == BondLexer.ENUM))
+                var def = ctx.structDef();
+                var baseClause = def.userType() != null ? $" : {FormatUserType(def.userType())}" : "";
+                var header = $"struct {name}{typeParams}{baseClause}";
+                var fields = def.field();
+
+                if (fields.Length == 0 && !HasComments(def.LBRACE().Symbol.TokenIndex))
                 {
-                    _pendingSpace = false;
-                    _skipNextSemi = true;
+                    sb.Append($"{header} {{}}");
                 }
-                if (_indentLevel == 0)
+                else
                 {
-                    _pendingTopLevelBlankLine = true;
+                    sb.Append(header);
+                    sb.Append(" {\n");
+                    foreach (var field in fields)
+                    {
+                        sb.Append(FormatField(field));
+                        sb.Append('\n');
+                    }
+                    sb.Append('}');
                 }
-                WriteNewline();
-                _inTypeHeader = false;
-                UpdateTopLevelKeyword(token.Type);
-                _lastToken = token;
-                return;
             }
-
-            UpdateTopLevelKeyword(token.Type);
-            _lastToken = token;
-        }
-
-        private void ApplyTopLevelSpacingIfNeeded(int tokenType)
-        {
-            if (!_pendingTopLevelBlankLine)
+            else if (ctx.structView() != null)
             {
-                if (_lastTopLevelKeyword == BondLexer.IMPORT
-                    && tokenType != BondLexer.IMPORT
-                    && TopLevelStartTokens.Contains(tokenType))
+                var view = ctx.structView();
+                var baseType = view.qualifiedName().GetText();
+                var viewFields = view.viewFieldList().identifier();
+                sb.Append($"struct {name}{typeParams} view_of {baseType} {{\n");
+                for (int i = 0; i < viewFields.Length; i++)
                 {
-                    EnsureBlankLine();
+                    sb.Append(_indent);
+                    sb.Append(viewFields[i].GetText());
+                    sb.Append(i < viewFields.Length - 1 ? ",\n" : "\n");
                 }
-                return;
+                sb.Append('}');
             }
 
-            if (!TopLevelStartTokens.Contains(tokenType))
-            {
-                return;
-            }
-
-            var previous = _lastTopLevelKeyword;
-            _pendingTopLevelBlankLine = false;
-
-            if (previous == BondLexer.IMPORT && tokenType == BondLexer.IMPORT)
-            {
-                return;
-            }
-            if (previous == BondLexer.USING && tokenType == BondLexer.USING)
-            {
-                return;
-            }
-
-            EnsureBlankLine();
+            return sb.ToString().TrimEnd('\n');
         }
 
-        private void UpdateTopLevelKeyword(int tokenType)
+        private string FormatEnum(BondParser.EnumContext ctx)
         {
-            if (_indentLevel != 0)
-            {
-                return;
-            }
+            var sb = new StringBuilder();
+            EmitStandaloneLeading(sb, ctx.Start.TokenIndex);
 
-            if (TopLevelStartTokens.Contains(tokenType))
+            if (ctx.attributes() != null)
             {
-                _lastTopLevelKeyword = tokenType;
-            }
-        }
-
-        private bool ShouldSetPendingSpace(int type)
-        {
-            if (type == BondLexer.SEMI || type == BondLexer.LBRACE || type == BondLexer.RBRACE)
-            {
-                return false;
-            }
-
-            return !NoSpaceAfter.Contains(type);
-        }
-
-        private bool IsEmptyBlock(IToken token, int nextType)
-        {
-            if (nextType != BondLexer.RBRACE)
-            {
-                return false;
-            }
-
-            var hidden = _tokenStream.GetHiddenTokensToRight(token.TokenIndex);
-            if (hidden == null)
-            {
-                return true;
-            }
-
-            foreach (var ht in hidden)
-            {
-                if (ht.Type == BondLexer.LINE_COMMENT || ht.Type == BondLexer.COMMENT)
+                var attrs = ctx.attributes().attribute();
+                for (int i = 0; i < attrs.Length; i++)
                 {
-                    return false;
+                    if (attrs[i].Start.TokenIndex != ctx.Start.TokenIndex)
+                        EmitStandaloneLeading(sb, attrs[i].Start.TokenIndex);
+                    sb.Append(FormatAttribute(attrs[i]));
+                    sb.Append('\n');
                 }
             }
 
-            return true;
+            var name = ctx.identifier().GetText();
+            sb.Append($"enum {name} {{\n");
+
+            var constants = ctx.enumConstant();
+            for (int i = 0; i < constants.Length; i++)
+            {
+                var isLast = i == constants.Length - 1;
+                EmitStandaloneLeading(sb, constants[i].Start.TokenIndex, _indent);
+                sb.Append(_indent);
+                EmitInlineLeading(sb, constants[i].Start.TokenIndex);
+                sb.Append(FormatEnumConstant(constants[i]));
+                if (!isLast)
+                    sb.Append(',');
+                sb.Append('\n');
+            }
+
+            sb.Append('}');
+            return sb.ToString().TrimEnd('\n');
         }
 
-        private void WriteIndent()
+        private string FormatService(BondParser.ServiceContext ctx)
         {
-            if (!_atLineStart)
+            var sb = new StringBuilder();
+            EmitStandaloneLeading(sb, ctx.Start.TokenIndex);
+
+            if (ctx.attributes() != null)
             {
-                return;
-            }
-
-            if (_indentLevel > 0)
-            {
-                _builder.Append(' ', _indentLevel * _options.IndentSize);
-            }
-
-            _atLineStart = false;
-        }
-
-        private void WriteNewline()
-        {
-            if (_builder.Length == 0 || _builder[^1] != '\n')
-            {
-                _builder.Append('\n');
-            }
-            _atLineStart = true;
-            _pendingSpace = false;
-        }
-
-        private void EnsureBlankLine()
-        {
-            if (!_atLineStart)
-            {
-                WriteNewline();
-            }
-
-            var trailingNewlines = CountTrailingNewlines();
-            if (trailingNewlines >= 2)
-            {
-                return;
-            }
-
-            while (trailingNewlines < 2)
-            {
-                _builder.Append('\n');
-                trailingNewlines++;
-            }
-
-            _atLineStart = true;
-            _pendingSpace = false;
-        }
-
-        private int CountTrailingNewlines()
-        {
-            var count = 0;
-            for (int i = _builder.Length - 1; i >= 0; i--)
-            {
-                if (_builder[i] != '\n')
+                var attrs = ctx.attributes().attribute();
+                for (int i = 0; i < attrs.Length; i++)
                 {
-                    break;
+                    if (attrs[i].Start.TokenIndex != ctx.Start.TokenIndex)
+                        EmitStandaloneLeading(sb, attrs[i].Start.TokenIndex);
+                    sb.Append(FormatAttribute(attrs[i]));
+                    sb.Append('\n');
                 }
-                count++;
             }
-            return count;
-        }
 
-        private static bool StartsTypeHeader(int tokenType)
-        {
-            return tokenType is BondLexer.STRUCT or BondLexer.SERVICE;
-        }
+            var name = ctx.identifier().GetText();
+            var typeParams = ctx.typeParameters() != null ? FormatTypeParameters(ctx.typeParameters()) : "";
+            var baseClause = ctx.serviceType() != null ? $" : {FormatServiceType(ctx.serviceType())}" : "";
+            sb.Append($"service {name}{typeParams}{baseClause} {{\n");
 
-        private static int? GetBlockKind(int tokenType)
-        {
-            return tokenType switch
+            foreach (var method in ctx.method())
             {
-                BondLexer.STRUCT => BondLexer.STRUCT,
-                BondLexer.ENUM => BondLexer.ENUM,
-                BondLexer.SERVICE => BondLexer.SERVICE,
-                BondLexer.VIEW_OF => BondLexer.VIEW_OF,
-                _ => null
-            };
+                sb.Append(FormatMethod(method));
+                sb.Append('\n');
+            }
+
+            sb.Append('}');
+            return sb.ToString().TrimEnd('\n');
         }
 
-        private bool IsInsideEnumBlock()
+        private string FormatField(BondParser.FieldContext ctx)
         {
-            return _blockStack.Count > 0 && _blockStack.Peek() == BondLexer.ENUM;
+            var sb = new StringBuilder();
+
+            if (ctx.attributes() != null)
+            {
+                foreach (var attr in ctx.attributes().attribute())
+                {
+                    EmitStandaloneLeading(sb, attr.Start.TokenIndex, _indent);
+                    sb.Append(_indent);
+                    sb.Append(FormatAttribute(attr));
+                    sb.Append('\n');
+                }
+            }
+
+            var ordinalIndex = ctx.fieldOrdinal().Start.TokenIndex;
+            EmitStandaloneLeading(sb, ordinalIndex, _indent);
+            sb.Append(_indent);
+            EmitInlineLeading(sb, ordinalIndex);
+            sb.Append(ctx.fieldOrdinal().GetText());
+            sb.Append(": ");
+
+            if (ctx.modifier() != null)
+            {
+                sb.Append(ctx.modifier().GetText());
+                sb.Append(' ');
+            }
+
+            sb.Append(FormatFieldType(ctx.fieldType()));
+            sb.Append(' ');
+            sb.Append(ctx.fieldIdentifier().GetText());
+
+            if (ctx.default_() != null)
+            {
+                sb.Append(" = ");
+                sb.Append(FormatDefault(ctx.default_()));
+            }
+
+            sb.Append(';');
+            return sb.ToString();
         }
+
+        private string FormatEnumConstant(BondParser.EnumConstantContext ctx)
+        {
+            var name = ctx.identifier().GetText();
+            if (ctx.INTEGER_LITERAL() != null)
+            {
+                var minus = ctx.MINUS() != null ? "-" : "";
+                return $"{name} = {minus}{ctx.INTEGER_LITERAL().GetText()}";
+            }
+            return name;
+        }
+
+        private string FormatMethod(BondParser.MethodContext ctx)
+        {
+            var sb = new StringBuilder();
+            EmitStandaloneLeading(sb, ctx.Start.TokenIndex, _indent);
+
+            if (ctx.attributes() != null)
+            {
+                var attrs = ctx.attributes().attribute();
+                for (int i = 0; i < attrs.Length; i++)
+                {
+                    if (attrs[i].Start.TokenIndex != ctx.Start.TokenIndex)
+                        EmitStandaloneLeading(sb, attrs[i].Start.TokenIndex, _indent);
+                    sb.Append(_indent);
+                    sb.Append(FormatAttribute(attrs[i]));
+                    sb.Append('\n');
+                }
+            }
+
+            sb.Append(_indent);
+            string resultType = ctx.NOTHING() != null
+                ? "nothing"
+                : FormatMethodResultType(ctx.methodResultType());
+
+            var methodName = ctx.identifier().GetText();
+            string param = ctx.methodParameter() != null
+                ? FormatMethodParameter(ctx.methodParameter())
+                : "";
+
+            sb.Append($"{resultType} {methodName}({param});");
+            return sb.ToString();
+        }
+
+        private string FormatAttribute(BondParser.AttributeContext ctx) =>
+            $"[{ctx.qualifiedName().GetText()}({ctx.STRING_LITERAL().GetText()})]";
+
+        private string FormatFieldType(BondParser.FieldTypeContext ctx)
+        {
+            if (ctx.type() != null) return FormatType(ctx.type());
+            return ctx.GetText();
+        }
+
+        private string FormatType(BondParser.TypeContext ctx)
+        {
+            if (ctx.basicType() != null) return ctx.basicType().GetText();
+            if (ctx.complexType() != null) return FormatComplexType(ctx.complexType());
+            if (ctx.userType() != null) return FormatUserType(ctx.userType());
+            return ctx.GetText();
+        }
+
+        private string FormatComplexType(BondParser.ComplexTypeContext ctx)
+        {
+            if (ctx.BLOB() != null) return "blob";
+            if (ctx.LIST() != null) return $"list<{FormatType(ctx.type())}>";
+            if (ctx.VECTOR() != null) return $"vector<{FormatType(ctx.type())}>";
+            if (ctx.NULLABLE() != null) return $"nullable<{FormatType(ctx.type())}>";
+            if (ctx.SET() != null) return $"set<{FormatKeyType(ctx.keyType())}>";
+            if (ctx.MAP() != null) return $"map<{FormatKeyType(ctx.keyType())}, {FormatType(ctx.type())}>";
+            if (ctx.BONDED() != null) return $"bonded<{FormatUserStructRef(ctx.userStructRef())}>";
+            return ctx.GetText();
+        }
+
+        private string FormatKeyType(BondParser.KeyTypeContext ctx)
+        {
+            if (ctx.basicType() != null) return ctx.basicType().GetText();
+            if (ctx.userType() != null) return FormatUserType(ctx.userType());
+            return ctx.GetText();
+        }
+
+        private string FormatUserType(BondParser.UserTypeContext ctx)
+        {
+            var name = ctx.qualifiedName().GetText();
+            return ctx.typeArgs() != null ? $"{name}{FormatTypeArgs(ctx.typeArgs())}" : name;
+        }
+
+        private string FormatUserStructRef(BondParser.UserStructRefContext ctx)
+        {
+            var name = ctx.qualifiedName().GetText();
+            return ctx.typeArgs() != null ? $"{name}{FormatTypeArgs(ctx.typeArgs())}" : name;
+        }
+
+        private string FormatServiceType(BondParser.ServiceTypeContext ctx)
+        {
+            var name = ctx.qualifiedName().GetText();
+            return ctx.typeArgs() != null ? $"{name}{FormatTypeArgs(ctx.typeArgs())}" : name;
+        }
+
+        private string FormatTypeArgs(BondParser.TypeArgsContext ctx) =>
+            $"<{string.Join(", ", ctx.typeArg().Select(FormatTypeArg))}>";
+
+        private string FormatTypeArg(BondParser.TypeArgContext ctx)
+        {
+            if (ctx.type() != null) return FormatType(ctx.type());
+            return ctx.INTEGER_LITERAL().GetText();
+        }
+
+        private string FormatTypeParameters(BondParser.TypeParametersContext ctx) =>
+            $"<{string.Join(", ", ctx.typeParam().Select(FormatTypeParam))}>";
+
+        private string FormatTypeParam(BondParser.TypeParamContext ctx)
+        {
+            var name = ctx.identifier().GetText();
+            return ctx.constraint() != null ? $"{name}: value" : name;
+        }
+
+        private string FormatMethodResultType(BondParser.MethodResultTypeContext ctx)
+        {
+            if (ctx.VOID() != null) return "void";
+            if (ctx.methodTypeStreaming() != null)
+                return $"stream {FormatUserStructRef(ctx.methodTypeStreaming().userStructRef())}";
+            if (ctx.methodTypeUnary() != null)
+                return FormatUserStructRef(ctx.methodTypeUnary().userStructRef());
+            return ctx.GetText();
+        }
+
+        private string FormatMethodInputType(BondParser.MethodInputTypeContext ctx)
+        {
+            if (ctx.VOID() != null) return "void";
+            if (ctx.methodTypeStreaming() != null)
+                return $"stream {FormatUserStructRef(ctx.methodTypeStreaming().userStructRef())}";
+            if (ctx.methodTypeUnary() != null)
+                return FormatUserStructRef(ctx.methodTypeUnary().userStructRef());
+            return ctx.GetText();
+        }
+
+        private string FormatMethodParameter(BondParser.MethodParameterContext ctx)
+        {
+            var type = FormatMethodInputType(ctx.methodInputType());
+            return ctx.identifier() != null ? $"{type} {ctx.identifier().GetText()}" : type;
+        }
+
+        private static string FormatDefault(BondParser.Default_Context ctx) => ctx.GetText();
     }
 }

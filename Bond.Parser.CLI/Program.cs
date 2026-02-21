@@ -7,6 +7,7 @@ using Bond.Parser.Formatting;
 using Bond.Parser.Compatibility;
 using Bond.Parser.Json;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Bond.Parser.CLI;
@@ -38,8 +39,8 @@ public static class Program
         Console.WriteLine("Bond Schema Compiler - Parses and validates Bond IDL files");
         Console.WriteLine();
         Console.WriteLine("Usage:");
-        Console.WriteLine("  bcc parse <file.bond> [options]");
-        Console.WriteLine("  bcc breaking <file.bond> --against <reference> [options]");
+        Console.WriteLine("  bbc parse <file.bond> [options]");
+        Console.WriteLine("  bbc breaking <file.bond> --against <reference> [options]");
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  parse       Parse and validate a Bond schema file");
@@ -328,7 +329,7 @@ public static class Program
             oldResult = await ParserFacade.ParseFileAsync(
                 oldSchema.FilePath,
                 oldSchema.ImportResolver,
-                default,
+                CancellationToken.None,
                 parseOptions);
         }
         if (!oldResult.Success)
@@ -344,7 +345,7 @@ public static class Program
 
         var checker = new CompatibilityChecker();
         var changes = checker.CheckCompatibility(oldResult.Ast!, newResult.Ast!);
-        var breaking = changes.Where(c => c.Category == ChangeCategory.Breaking).ToList();
+        var breaking = changes.Where(c => c.Category is ChangeCategory.BreakingWire or ChangeCategory.BreakingText).ToList();
 
         if (errorFormat == "json")
         {
@@ -399,7 +400,7 @@ public static class Program
         };
     }
 
-    static int OutputParseError(string errorFormat, List<ParseError> errors, string message, string filePath)
+    static int OutputParseError(string errorFormat, IReadOnlyList<ParseError> errors, string message, string filePath)
     {
         if (errorFormat == "json")
         {
@@ -419,7 +420,7 @@ public static class Program
     static void WriteError(string message)
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine(message);
+        Console.Error.WriteLine(message);
         Console.ResetColor();
     }
 
@@ -428,7 +429,7 @@ public static class Program
         Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    static void OutputJsonErrors(string errorType, List<ParseError> errors, string message)
+    static void OutputJsonErrors(string errorType, IReadOnlyList<ParseError> errors, string message)
     {
         OutputJson(new
         {
@@ -446,20 +447,20 @@ public static class Program
 
     static void OutputJsonBreaking(List<SchemaChange> changes, bool hasBreaking)
     {
+        static string CategoryToString(ChangeCategory cat) => cat switch
+        {
+            ChangeCategory.BreakingWire => "breaking_wire",
+            ChangeCategory.BreakingText => "breaking_text",
+            _                           => "compatible",
+        };
+
         OutputJson(new
         {
-            has_breaking_changes = hasBreaking,
-            total_changes = changes.Count,
-            breaking_changes = changes.Where(c => c.Category == ChangeCategory.Breaking).Select(c => new
+            changes = changes.Select(c => new
             {
-                location = c.Location,
-                description = c.Description,
-                recommendation = c.Recommendation
-            }).ToArray(),
-            compatible_changes = changes.Where(c => c.Category == ChangeCategory.Compatible).Select(c => new
-            {
-                location = c.Location,
-                description = c.Description,
+                type           = CategoryToString(c.Category),
+                location       = c.Location,
+                description    = c.Description,
                 recommendation = c.Recommendation
             }).ToArray()
         });

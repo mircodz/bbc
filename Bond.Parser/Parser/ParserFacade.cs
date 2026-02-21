@@ -24,7 +24,7 @@ public record ParseError(
 /// </summary>
 public record ParseResult(
     Syntax.Bond? Ast,
-    List<ParseError> Errors
+    IReadOnlyList<ParseError> Errors
 )
 {
     public bool Success => Errors.Count == 0 && Ast != null;
@@ -118,7 +118,7 @@ public static class ParserFacade
             var parseTree = parser.bond();
             if (errorListener.Errors.Count > 0)
             {
-                return new ParseResult(null, errorListener.Errors.ToList());
+                return new ParseResult(null, errorListener.Errors);
             }
 
             // Build AST
@@ -138,6 +138,11 @@ public static class ParserFacade
             {
                 await analyzer.AnalyzeAsync(ast);
             }
+            catch (SemanticErrorException ex)
+            {
+                errors.Add(new ParseError(ex.Message, filePath, ex.Location.Line, ex.Location.Column));
+                return new ParseResult(ast, errors);
+            }
             catch (Exception ex)
             {
                 errors.Add(new ParseError(ex.Message, filePath, 0, 0));
@@ -149,6 +154,11 @@ public static class ParserFacade
             {
                 var typeResolver = new TypeResolver(symbolTable);
                 ast = typeResolver.ResolveTypes(ast);
+            }
+            catch (SemanticErrorException ex)
+            {
+                errors.Add(new ParseError($"Type resolution failed: {ex.Message}", filePath, ex.Location.Line, ex.Location.Column));
+                return new ParseResult(ast, errors);
             }
             catch (Exception ex)
             {

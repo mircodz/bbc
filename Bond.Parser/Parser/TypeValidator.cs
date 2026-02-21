@@ -1,4 +1,3 @@
-using System;
 using Bond.Parser.Syntax;
 using Bond.Parser.Util;
 
@@ -67,38 +66,5 @@ public static class TypeValidator
     public static bool IsValidKeyType(BondType type)
     {
         return type.IsValidKeyType();
-    }
-
-    /// <summary>
-    /// Validates field ordinal is within valid range
-    /// </summary>
-    public static bool IsValidOrdinal(ushort ordinal)
-    {
-        // Ordinals must be 0-65535 (covered by ushort type)
-        return true;
-    }
-
-    /// <summary>
-    /// Validates that enum fields have default values
-    /// </summary>
-    public static void ValidateEnumField(Field field)
-    {
-        if (field.Type.IsEnum() && field.DefaultValue == null)
-        {
-            throw new InvalidOperationException(
-                $"Enum field '{field.Name}' must have a default value");
-        }
-    }
-
-    /// <summary>
-    /// Validates that struct fields don't have 'nothing' default
-    /// </summary>
-    public static void ValidateStructField(Field field)
-    {
-        if (field.Type.IsStruct() && field.DefaultValue is Default.Nothing)
-        {
-            throw new InvalidOperationException(
-                $"Struct field '{field.Name}' cannot have default value of 'nothing'");
-        }
     }
 }

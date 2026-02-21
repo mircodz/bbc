@@ -22,6 +22,8 @@ public record Field(
     Default? DefaultValue
 )
 {
+    public SourceLocation Location { get; init; } = SourceLocation.Unknown;
+
     public override string ToString()
     {
         var modifier = Modifier switch

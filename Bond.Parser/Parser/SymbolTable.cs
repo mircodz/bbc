@@ -35,8 +35,7 @@ public class SymbolTable
             // Try to reconcile forward declarations with definitions
             if (!TryReconcile(duplicate, declaration))
             {
-                throw new InvalidOperationException(
-                    $"Duplicate declaration: {declaration.Kind} '{declaration.Name}' was already declared as {duplicate.Kind}");
+                throw new InvalidOperationException($"Duplicate declaration: {declaration.Kind} '{declaration.Name}' was already declared as {duplicate.Kind}");
             }
         }
 
@@ -162,8 +161,7 @@ public class SymbolTable
 
         if (duplicates.Count > 0)
         {
-            throw new InvalidOperationException(
-                $"Duplicate declaration: alias '{alias.Name}' was already declared as alias");
+            throw new InvalidOperationException($"Duplicate declaration: alias '{alias.Name}' was already declared as alias");
         }
 
         scope.Add(alias);
@@ -233,14 +231,8 @@ public class SymbolTable
             return false;
         }
 
-        for (int i = 0; i < params1.Length; i++)
-        {
-            if (params1[i].Constraint != params2[i].Constraint)
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return !params1
+            .Where((t, i) => t.Constraint != params2[i].Constraint)
+            .Any();
     }
 }
