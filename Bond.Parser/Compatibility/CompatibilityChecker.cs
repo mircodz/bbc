@@ -17,7 +17,6 @@ public class CompatibilityChecker
     {
         var changes = new List<SchemaChange>();
 
-        // Compare declarations by name
         var oldDecls = oldSchema.Declarations.ToDictionary(d => d.QualifiedName, d => d);
         var newDecls = newSchema.Declarations.ToDictionary(d => d.QualifiedName, d => d);
 
@@ -44,7 +43,6 @@ public class CompatibilityChecker
             }
         }
 
-        // Compare matching declarations
         foreach (var (name, oldDecl) in oldDecls)
         {
             if (newDecls.TryGetValue(name, out var newDecl))
@@ -58,7 +56,6 @@ public class CompatibilityChecker
 
     private void CompareDeclarations(Declaration oldDecl, Declaration newDecl, List<SchemaChange> changes)
     {
-        // Check if declaration type changed
         if (oldDecl.GetType() != newDecl.GetType())
         {
             changes.Add(new SchemaChange(
@@ -89,7 +86,6 @@ public class CompatibilityChecker
     {
         var location = $"struct {oldStruct.Name}";
 
-        // Check inheritance change
         var oldBase = oldStruct.BaseType?.ToString() ?? "";
         var newBase = newStruct.BaseType?.ToString() ?? "";
         if (oldBase != newBase)
@@ -101,11 +97,9 @@ public class CompatibilityChecker
                 "Changing inheritance breaks wire compatibility"));
         }
 
-        // Compare fields by ordinal
         var oldFields = oldStruct.Fields.ToDictionary(f => f.Ordinal, f => f);
         var newFields = newStruct.Fields.ToDictionary(f => f.Ordinal, f => f);
 
-        // Check for removed fields
         foreach (var oldField in oldFields.Values)
         {
             if (!newFields.ContainsKey(oldField.Ordinal))
@@ -126,7 +120,6 @@ public class CompatibilityChecker
             }
         }
 
-        // Check for added fields
         foreach (var newField in newFields.Values)
         {
             if (!oldFields.ContainsKey(newField.Ordinal))
@@ -147,7 +140,6 @@ public class CompatibilityChecker
             }
         }
 
-        // Compare matching fields
         foreach (var (ordinal, oldField) in oldFields)
         {
             if (newFields.TryGetValue(ordinal, out var newField))
@@ -171,7 +163,6 @@ public class CompatibilityChecker
                 location));
         }
 
-        // Check modifier changes
         if (oldField.Modifier != newField.Modifier)
         {
             var changeCategory = ClassifyModifierChange(oldField.Modifier, newField.Modifier);
@@ -184,7 +175,6 @@ public class CompatibilityChecker
                 recommendation));
         }
 
-        // Check type changes
         if (!TypesEqual(oldField.Type, newField.Type))
         {
             var typeChange = ClassifyTypeChange(oldField.Type, newField.Type);
@@ -195,7 +185,6 @@ public class CompatibilityChecker
                 typeChange.Recommendation));
         }
 
-        // Check default value changes
         if (!DefaultsEqual(oldField.DefaultValue, newField.DefaultValue))
         {
             changes.Add(new SchemaChange(
@@ -213,11 +202,9 @@ public class CompatibilityChecker
         var oldConstants = oldEnum.Constants.ToList();
         var newConstants = newEnum.Constants.ToList();
 
-        // Build maps by name and value
         var oldByName = oldConstants.ToDictionary(c => c.Name, c => c);
         var newByName = newConstants.ToDictionary(c => c.Name, c => c);
 
-        // Check for removed constants
         foreach (var oldConst in oldConstants)
         {
             if (!newByName.ContainsKey(oldConst.Name))
@@ -230,7 +217,6 @@ public class CompatibilityChecker
             }
         }
 
-        // Check for added constants
         foreach (var newConst in newConstants)
         {
             if (!oldByName.ContainsKey(newConst.Name))
@@ -253,7 +239,6 @@ public class CompatibilityChecker
             }
         }
 
-        // Check for changed constants
         foreach (var (name, oldConst) in oldByName)
         {
             if (newByName.TryGetValue(name, out var newConst))
@@ -267,7 +252,6 @@ public class CompatibilityChecker
                         "Changing enum constant values breaks compatibility"));
                 }
 
-                // Check for position change (implicit reordering)
                 var oldIndex = oldConstants.IndexOf(oldConst);
                 var newIndex = newConstants.IndexOf(newConst);
                 if (oldIndex != newIndex)
@@ -286,7 +270,6 @@ public class CompatibilityChecker
     {
         var location = $"service {oldService.Name}";
 
-        // Compare methods by name
         var oldMethods = oldService.Methods.ToDictionary(m => m.Name, m => m);
         var newMethods = newService.Methods.ToDictionary(m => m.Name, m => m);
 
@@ -312,7 +295,6 @@ public class CompatibilityChecker
             }
         }
 
-        // Compare matching methods
         foreach (var (name, oldMethod) in oldMethods)
         {
             if (newMethods.TryGetValue(name, out var newMethod))
@@ -366,7 +348,6 @@ public class CompatibilityChecker
 
     private static (ChangeCategory Category, string? Recommendation) ClassifyTypeChange(BondType oldType, BondType newType)
     {
-        // Safe type changes
         if (IsInt32ToEnumChange(oldType, newType) || IsInt32ToEnumChange(newType, oldType))
             return (ChangeCategory.Compatible, null);
 
@@ -386,7 +367,6 @@ public class CompatibilityChecker
         if (IsIntToEnumPromotion(oldType, newType))
             return (ChangeCategory.Compatible, "Deploy to consumers before producers when promoting int8/int16 to enum");
 
-        // Everything else is breaking
         return (ChangeCategory.BreakingWire, "This type change is not compatible");
     }
 
@@ -420,7 +400,6 @@ public class CompatibilityChecker
             _ => false
         };
 
-    // Static table allocated once; HashSet gives O(1) lookup.
     private static readonly HashSet<(Type, Type)> NumericPromotions =
     [
         (typeof(BondType.Float),  typeof(BondType.Double)),

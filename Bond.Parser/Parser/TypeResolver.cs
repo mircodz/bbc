@@ -165,7 +165,6 @@ public class TypeResolver(SymbolTable symbolTable)
             BondType.Bonded bonded => new BondType.Bonded(
                 ResolveType(bonded.StructType, namespaces, currentStruct)),
 
-            // This is what we're here for - resolve unresolved types!
             BondType.UnresolvedUserType unresolved =>
                 ResolveUnresolvedType(unresolved, namespaces, currentStruct),
 
@@ -179,7 +178,6 @@ public class TypeResolver(SymbolTable symbolTable)
 
     private BondType ResolveUnresolvedType(BondType.UnresolvedUserType unresolved, Namespace[] namespaces, StructDeclaration? currentStruct)
     {
-        // Look up the declaration in the symbol table
         var declaration = symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
 
         // Gracefully accept primitive types with different casing (e.g., "String")
@@ -197,7 +195,6 @@ public class TypeResolver(SymbolTable symbolTable)
                 $"Type '{string.Join(".", unresolved.QualifiedName)}' not found in symbol table");
         }
 
-        // Resolve type arguments recursively
         var resolvedTypeArgs = unresolved.TypeArguments
             .Select(arg => ResolveType(arg, namespaces, currentStruct))
             .ToArray();
@@ -217,17 +214,13 @@ public class TypeResolver(SymbolTable symbolTable)
             return new BondType.UserDefined(forward, resolvedTypeArgs);
         }
 
-        // Special handling for aliases - we need to resolve the alias declaration itself first
+        // Resolve alias chains before wrapping in UserDefined.
         if (declaration is AliasDeclaration alias)
         {
-            // Resolve the aliased type
             var resolvedAlias = ResolveAlias(alias, namespaces);
-
-            // Now create UserDefined with the resolved alias
             return new BondType.UserDefined(resolvedAlias, resolvedTypeArgs);
         }
 
-        // Create UserDefined type with resolved declaration and type arguments
         return new BondType.UserDefined(declaration, resolvedTypeArgs);
     }
 
@@ -261,18 +254,13 @@ public class TypeResolver(SymbolTable symbolTable)
 
     private BondType ResolveUserDefinedType(BondType.UserDefined userDefined, Namespace[] namespaces, StructDeclaration? currentStruct)
     {
-        // Look up the latest version of the declaration from the symbol table
-        // This is important for self-referential types and multi-pass resolution
         var qualifiedName = userDefined.Declaration.Namespaces.Length > 0
             ? userDefined.Declaration.Namespaces[0].Name.Concat([userDefined.Declaration.Name]).ToArray()
             : [userDefined.Declaration.Name];
 
         var latestDeclaration = symbolTable.FindSymbol(qualifiedName, namespaces);
-
-        // If not found in symbol table (shouldn't happen), use the existing declaration
         var declaration = latestDeclaration ?? userDefined.Declaration;
 
-        // Resolve type arguments
         var resolvedTypeArgs = userDefined.TypeArguments
             .Select(arg => ResolveType(arg, namespaces, currentStruct))
             .ToArray();
@@ -291,21 +279,18 @@ public class TypeResolver(SymbolTable symbolTable)
             return new BondType.UserDefined(forward, resolvedTypeArgs);
         }
 
-        // Special handling for aliases - resolve through them
         if (declaration is AliasDeclaration alias)
         {
             var resolvedAlias = ResolveAlias(alias, namespaces);
             return new BondType.UserDefined(resolvedAlias, resolvedTypeArgs);
         }
 
-        // If nothing changed, return the original
         if (ReferenceEquals(declaration, userDefined.Declaration) &&
             resolvedTypeArgs.SequenceEqual(userDefined.TypeArguments))
         {
             return userDefined;
         }
 
-        // Return new UserDefined with latest declaration and resolved type arguments
         return new BondType.UserDefined(declaration, resolvedTypeArgs);
     }
 

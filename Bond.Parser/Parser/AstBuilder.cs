@@ -308,7 +308,6 @@ public class AstBuilder : BondBaseVisitor<object?>
 
         if (context.NOTHING() != null)
         {
-            // Event method
             var inputType = context.methodParameter() != null
                 ? (MethodType)Visit(context.methodParameter().methodInputType())!
                 : MethodType.Void.Instance;
@@ -322,7 +321,6 @@ public class AstBuilder : BondBaseVisitor<object?>
         }
         else
         {
-            // Function method
             var resultType = (MethodType)Visit(context.methodResultType())!;
             var inputType = context.methodParameter() != null
                 ? (MethodType)Visit(context.methodParameter().methodInputType())!
@@ -550,7 +548,6 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var name = (string[])Visit(context.qualifiedName())!;
 
-        // Check if this is a type parameter
         if (name.Length == 1)
         {
             var typeParam = _currentTypeParams.FirstOrDefault(p => p.Name == name[0]);
@@ -571,7 +568,6 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var name = (string[])Visit(context.qualifiedName())!;
 
-        // Check if this is a type parameter
         if (name.Length == 1)
         {
             var typeParam = _currentTypeParams.FirstOrDefault(p => p.Name == name[0]);
@@ -592,7 +588,6 @@ public class AstBuilder : BondBaseVisitor<object?>
     {
         var name = (string[])Visit(context.qualifiedName())!;
 
-        // Check if this is a type parameter
         if (name.Length == 1)
         {
             var typeParam = _currentTypeParams.FirstOrDefault(p => p.Name == name[0]);
@@ -627,7 +622,6 @@ public class AstBuilder : BondBaseVisitor<object?>
         {
             var value = ParseInteger(context.INTEGER_LITERAL().GetText());
 
-            // Type arguments must fit in int64
             if (value < long.MinValue || value > long.MaxValue)
             {
                 throw new InvalidOperationException(
@@ -677,7 +671,6 @@ public class AstBuilder : BondBaseVisitor<object?>
             return new Default.String(value);
         }
 
-        // Check for optional minus sign
         var isNegative = context.MINUS() != null;
 
         if (context.FLOAT_LITERAL() != null)

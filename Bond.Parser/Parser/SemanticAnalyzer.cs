@@ -32,19 +32,17 @@ public class SemanticAnalyzer
         _symbolTable.PushAliasScope();
         try
         {
-            // Process imports first
             foreach (var import in bond.Imports)
             {
                 await ProcessImportAsync(import);
             }
 
-            // Add all declarations to symbol table
             foreach (var declaration in bond.Declarations)
             {
                 _symbolTable.AddDeclaration(declaration);
             }
 
-            // Validate declarations after all symbols are registered
+            // Validate after all symbols are registered so forward references resolve.
             foreach (var declaration in bond.Declarations)
             {
                 ValidateDeclaration(declaration);
