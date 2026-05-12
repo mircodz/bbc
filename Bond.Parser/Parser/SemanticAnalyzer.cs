@@ -221,11 +221,11 @@ public class SemanticAnalyzer
         var actualType = ResolveAliases(field.Type, namespaces);
 
         // Validate map/set key types
-        if (actualType is BondType.Set set && !TypeValidator.IsValidKeyType(set.KeyType))
+        if (actualType is BondType.Set set && !IsValidKeyType(set.KeyType, namespaces))
         {
             throw new SemanticErrorException($"Field '{field.Name}' has invalid set key type {set.KeyType}", field.Location);
         }
-        if (actualType is BondType.Map map && !TypeValidator.IsValidKeyType(map.KeyType))
+        if (actualType is BondType.Map map && !IsValidKeyType(map.KeyType, namespaces))
         {
             throw new SemanticErrorException($"Field '{field.Name}' has invalid map key type {map.KeyType}", field.Location);
         }
@@ -257,6 +257,22 @@ public class SemanticAnalyzer
                 throw new SemanticErrorException($"Struct field '{field.Name}' cannot have default value of 'nothing'", field.Location);
             }
         }
+    }
+
+    private bool IsValidKeyType(BondType keyType, Namespace[] namespaces)
+    {
+        if (TypeValidator.IsValidKeyType(keyType))
+        {
+            return true;
+        }
+
+        if (keyType is BondType.UnresolvedUserType unresolved &&
+            _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces) is EnumDeclaration)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private BondType UnwrapMaybe(BondType type) => type is BondType.Maybe maybe ? maybe.ElementType : type;

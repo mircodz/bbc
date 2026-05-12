@@ -444,9 +444,10 @@ public class CompatibilityChecker
         oldType is BondType.Int8 or BondType.Int16 &&
         newType is BondType.UserDefined { Declaration: EnumDeclaration };
 
-    // Structural type equality. BondType.UserDefined contains a BondType[] for type
-    // arguments; array reference equality is insufficient, so we recurse manually.
-    // For all other BondType subtypes the generated record == operator is correct.
+    // Structural type equality. The generated record == operator compares fields with
+    // Equals, which fails for BondType[] (array reference equality) and for nested
+    // UserDefined types backed by distinct Declaration instances from separate parses.
+    // We recurse manually through every container so equivalent shapes compare equal.
     private static bool TypesEqual(BondType type1, BondType type2) =>
         (type1, type2) switch
         {
@@ -454,6 +455,13 @@ public class CompatibilityChecker
                 u1.Declaration.QualifiedName == u2.Declaration.QualifiedName &&
                 u1.TypeArguments.Length == u2.TypeArguments.Length &&
                 u1.TypeArguments.Zip(u2.TypeArguments).All(p => TypesEqual(p.First, p.Second)),
+            (BondType.List l1, BondType.List l2) => TypesEqual(l1.ElementType, l2.ElementType),
+            (BondType.Vector v1, BondType.Vector v2) => TypesEqual(v1.ElementType, v2.ElementType),
+            (BondType.Set s1, BondType.Set s2) => TypesEqual(s1.KeyType, s2.KeyType),
+            (BondType.Map m1, BondType.Map m2) => TypesEqual(m1.KeyType, m2.KeyType) && TypesEqual(m1.ValueType, m2.ValueType),
+            (BondType.Nullable n1, BondType.Nullable n2) => TypesEqual(n1.ElementType, n2.ElementType),
+            (BondType.Maybe mb1, BondType.Maybe mb2) => TypesEqual(mb1.ElementType, mb2.ElementType),
+            (BondType.Bonded b1, BondType.Bonded b2) => TypesEqual(b1.StructType, b2.StructType),
             _ => type1 == type2
         };
 
