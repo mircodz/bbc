@@ -4,10 +4,12 @@ using Bond.Parser.Syntax;
 namespace Bond.Parser.Parser;
 
 /// <summary>
-/// Thrown by SemanticAnalyzer and TypeResolver when a semantic error can be attributed
-/// to a specific source location.
+/// Thrown by the parser pipeline (SymbolTable, SemanticAnalyzer, TypeResolver)
+/// for any semantic error that can be attributed to a specific source location.
+/// ParserFacade catches it and converts to a ParseError; callers do not need to
+/// catch it directly.
 /// </summary>
-internal sealed class SemanticErrorException : Exception
+public sealed class SemanticErrorException : Exception
 {
     public SourceLocation Location { get; }
 
