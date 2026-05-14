@@ -3,8 +3,8 @@
 # Variables
 VERSION := $(shell cat version)
 NUPKG_DIR := ./nupkgs
-TOOL_NAME := bbc
-PKG_ID := bbc
+TOOL_NAME := bond
+PKG_ID := bond-tools
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
