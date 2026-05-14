@@ -130,13 +130,13 @@ public static class ParserFacade
                 return new ParseResult(ast, errors);
             }
 
-            // Perform semantic analysis
+            // Register declarations, resolve types, then validate the resolved AST.
             var symbolTable = new SymbolTable();
             var analyzer = new SemanticAnalyzer(symbolTable, importResolver, filePath);
 
             try
             {
-                await analyzer.AnalyzeAsync(ast);
+                ast = await analyzer.AnalyzeAsync(ast);
             }
             catch (SemanticErrorException ex)
             {
@@ -146,23 +146,6 @@ public static class ParserFacade
             catch (Exception ex)
             {
                 errors.Add(new ParseError(ex.Message, filePath, 0, 0));
-                return new ParseResult(ast, errors);
-            }
-
-            // Resolve types
-            try
-            {
-                var typeResolver = new TypeResolver(symbolTable);
-                ast = typeResolver.ResolveTypes(ast);
-            }
-            catch (SemanticErrorException ex)
-            {
-                errors.Add(new ParseError($"Type resolution failed: {ex.Message}", filePath, ex.Location.Line, ex.Location.Column));
-                return new ParseResult(ast, errors);
-            }
-            catch (Exception ex)
-            {
-                errors.Add(new ParseError($"Type resolution failed: {ex.Message}", filePath, 0, 0));
                 return new ParseResult(ast, errors);
             }
 

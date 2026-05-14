@@ -1,195 +1,109 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Parser;
 
 /// <summary>
-/// Resolves UnresolvedUserType references to concrete UserDefined types
-/// Returns a new AST with all types resolved
+/// Walks an AST and replaces every UnresolvedUserType with a UserDefined wrapper
+/// around the resolved Declaration. Operates against a populated SymbolTable plus
+/// the current file's alias list.
 /// </summary>
-public class TypeResolver(SymbolTable symbolTable)
+public static class TypeResolver
 {
-    /// <summary>
-    /// Resolves all UnresolvedUserType references in the AST, returning a new Bond AST
-    /// with concrete UserDefined types. A single pass suffices: SemanticAnalyzer has
-    /// already populated the symbol table with every declaration (including all imports),
-    /// and ResolveUnresolvedType handles alias chains recursively within one traversal.
-    /// If a referenced type cannot be found, ResolveUnresolvedType throws immediately.
-    /// </summary>
-    public Syntax.Bond ResolveTypes(Syntax.Bond ast)
+    private readonly record struct Context(
+        SymbolTable Symbols,
+        IReadOnlyList<AliasDeclaration> Aliases,
+        Namespace[] Namespaces);
+
+    public static Syntax.Bond Resolve(Syntax.Bond ast, SymbolTable symbols, IReadOnlyList<AliasDeclaration> aliases)
     {
-        // SemanticAnalyzer pops the alias scope when it returns, so we rebuild it here
-        // so that FindAlias can locate alias declarations during resolution.
-        var importedDeclarations = symbolTable.GlobalDeclarations
-            .Where(d => !ast.Declarations.Contains(d))
-            .ToArray();
-
-        symbolTable.ClearGlobalDeclarations();
-        symbolTable.ClearAliasScopes();
-        symbolTable.PushAliasScope();
-        foreach (var importDecl in importedDeclarations)
-            symbolTable.AddDeclaration(importDecl);
-        foreach (var decl in ast.Declarations)
-            symbolTable.AddDeclaration(decl);
-
-        var resolvedDeclarations = ast.Declarations
-            .Select(decl => ResolveDeclaration(decl, ast.Namespaces))
-            .ToArray();
-
-        return ast with { Declarations = resolvedDeclarations };
+        var ctx = new Context(symbols, aliases, ast.Namespaces);
+        var resolved = ast.Declarations.Select(d => ResolveDeclaration(d, ctx)).ToArray();
+        return ast with { Declarations = resolved };
     }
 
-    private Declaration ResolveDeclaration(Declaration declaration, Namespace[] namespaces)
-    {
-        return declaration switch
+    private static Declaration ResolveDeclaration(Declaration declaration, Context ctx) =>
+        declaration switch
         {
-            StructDeclaration structDecl => ResolveStruct(structDecl, namespaces),
-            AliasDeclaration aliasDecl => ResolveAlias(aliasDecl, namespaces),
-            ServiceDeclaration serviceDecl => ResolveService(serviceDecl, namespaces),
-            EnumDeclaration enumDecl => enumDecl, // Enums don't have types to resolve
-            ForwardDeclaration fwdDecl => fwdDecl, // Forward decls don't have types
+            StructDeclaration s => ResolveStruct(s, ctx),
+            AliasDeclaration a => ResolveAlias(a, ctx),
+            ServiceDeclaration s => ResolveService(s, ctx),
+            EnumDeclaration or ForwardDeclaration => declaration,
             _ => declaration
         };
-    }
 
-    private StructDeclaration ResolveStruct(StructDeclaration structDecl, Namespace[] namespaces)
-    {
-        var resolvedFields = structDecl.Fields
-            .Select(field => ResolveField(field, namespaces, structDecl))
-            .ToArray();
-
-        var resolvedBase = structDecl.BaseType != null
-            ? ResolveType(structDecl.BaseType, namespaces, structDecl, structDecl.Location)
-            : null;
-
-        return structDecl with
+    private static StructDeclaration ResolveStruct(StructDeclaration structDecl, Context ctx) =>
+        structDecl with
         {
-            Fields = resolvedFields,
-            BaseType = resolvedBase
+            Fields = structDecl.Fields.Select(f => ResolveField(f, ctx, structDecl)).ToArray(),
+            BaseType = structDecl.BaseType is null ? null : ResolveType(structDecl.BaseType, ctx, currentStruct: null, structDecl.Location)
         };
-    }
 
-    private AliasDeclaration ResolveAlias(AliasDeclaration aliasDecl, Namespace[] namespaces)
-    {
-        var resolvedType = ResolveType(aliasDecl.AliasedType, namespaces, callerLocation: aliasDecl.Location);
-        return aliasDecl with { AliasedType = resolvedType };
-    }
+    private static AliasDeclaration ResolveAlias(AliasDeclaration aliasDecl, Context ctx) =>
+        aliasDecl with { AliasedType = ResolveType(aliasDecl.AliasedType, ctx, currentStruct: null, aliasDecl.Location) };
 
-    private ServiceDeclaration ResolveService(ServiceDeclaration serviceDecl, Namespace[] namespaces)
-    {
-        var resolvedMethods = serviceDecl.Methods
-            .Select(method => ResolveMethod(method, namespaces))
-            .ToArray();
-
-        var resolvedBase = serviceDecl.BaseType != null
-            ? ResolveType(serviceDecl.BaseType, namespaces, callerLocation: serviceDecl.Location)
-            : null;
-
-        return serviceDecl with
+    private static ServiceDeclaration ResolveService(ServiceDeclaration serviceDecl, Context ctx) =>
+        serviceDecl with
         {
-            Methods = resolvedMethods,
-            BaseType = resolvedBase
+            Methods = serviceDecl.Methods.Select(m => ResolveMethod(m, ctx)).ToArray(),
+            BaseType = serviceDecl.BaseType is null ? null : ResolveType(serviceDecl.BaseType, ctx, currentStruct: null, serviceDecl.Location)
         };
-    }
 
-    private Field ResolveField(Field field, Namespace[] namespaces, StructDeclaration? currentStruct = null)
-    {
-        var resolvedType = ResolveType(field.Type, namespaces, currentStruct, field.Location);
-        return field with { Type = resolvedType };
-    }
+    private static Field ResolveField(Field field, Context ctx, StructDeclaration currentStruct) =>
+        field with { Type = ResolveType(field.Type, ctx, currentStruct, field.Location) };
 
-    private Method ResolveMethod(Method method, Namespace[] namespaces)
+    private static Method ResolveMethod(Method method, Context ctx) => method switch
     {
-        return method switch
+        FunctionMethod f => f with { InputType = ResolveMethodType(f.InputType, ctx), ResultType = ResolveMethodType(f.ResultType, ctx) },
+        EventMethod e => e with { InputType = ResolveMethodType(e.InputType, ctx) },
+        _ => method
+    };
+
+    private static MethodType ResolveMethodType(MethodType methodType, Context ctx) => methodType switch
+    {
+        MethodType.Unary u => new MethodType.Unary(ResolveType(u.Type, ctx, currentStruct: null, default)),
+        MethodType.Streaming s => new MethodType.Streaming(ResolveType(s.Type, ctx, currentStruct: null, default)),
+        _ => methodType
+    };
+
+    private static BondType ResolveType(BondType type, Context ctx, StructDeclaration? currentStruct, SourceLocation callerLocation) => type switch
+    {
+        BondType.Int8 or BondType.Int16 or BondType.Int32 or BondType.Int64
+            or BondType.UInt8 or BondType.UInt16 or BondType.UInt32 or BondType.UInt64
+            or BondType.Float or BondType.Double or BondType.Bool
+            or BondType.String or BondType.WString or BondType.Blob
+            or BondType.MetaName or BondType.MetaFullName
+            or BondType.TypeParameter or BondType.IntTypeArg
+            => type,
+
+        BondType.List list => new BondType.List(ResolveType(list.ElementType, ctx, currentStruct, callerLocation)),
+        BondType.Vector vector => new BondType.Vector(ResolveType(vector.ElementType, ctx, currentStruct, callerLocation)),
+        BondType.Set set => new BondType.Set(ResolveType(set.KeyType, ctx, currentStruct, callerLocation)),
+        BondType.Map map => new BondType.Map(
+            ResolveType(map.KeyType, ctx, currentStruct, callerLocation),
+            ResolveType(map.ValueType, ctx, currentStruct, callerLocation)),
+        BondType.Nullable n => new BondType.Nullable(ResolveType(n.ElementType, ctx, currentStruct, callerLocation)),
+        BondType.Maybe m => new BondType.Maybe(ResolveType(m.ElementType, ctx, currentStruct, callerLocation)),
+        BondType.Bonded b => new BondType.Bonded(ResolveType(b.StructType, ctx, currentStruct, callerLocation)),
+
+        BondType.UnresolvedUserType u => ResolveUnresolvedType(u, ctx, currentStruct, callerLocation),
+        BondType.UserDefined u => ResolveUserDefinedType(u, ctx, currentStruct),
+
+        _ => throw new InvalidOperationException($"Unknown BondType: {type.GetType().Name}")
+    };
+
+    private static BondType ResolveUnresolvedType(BondType.UnresolvedUserType unresolved, Context ctx, StructDeclaration? currentStruct, SourceLocation callerLocation)
+    {
+        var declaration = ctx.Symbols.FindSymbol(unresolved.QualifiedName, ctx.Namespaces, ctx.Aliases);
+
+        if (declaration is null && unresolved.TypeArguments.Length == 0 && TryResolvePrimitive(unresolved.QualifiedName, out var primitive))
         {
-            FunctionMethod func => func with
-            {
-                InputType = ResolveMethodType(func.InputType, namespaces),
-                ResultType = ResolveMethodType(func.ResultType, namespaces)
-            },
-            EventMethod evt => evt with
-            {
-                InputType = ResolveMethodType(evt.InputType, namespaces)
-            },
-            _ => method
-        };
-    }
-
-    private MethodType ResolveMethodType(MethodType methodType, Namespace[] namespaces)
-    {
-        return methodType switch
-        {
-            MethodType.Unary unary => new MethodType.Unary(ResolveType(unary.Type, namespaces)),
-            MethodType.Streaming streaming => new MethodType.Streaming(ResolveType(streaming.Type, namespaces)),
-            _ => methodType
-        };
-    }
-
-    /// <summary>
-    /// Recursively resolves a BondType, handling nested container types
-    /// </summary>
-    private BondType ResolveType(BondType type, Namespace[] namespaces, StructDeclaration? currentStruct = null, SourceLocation callerLocation = default)
-    {
-        return type switch
-        {
-            // Primitives - no resolution needed
-            BondType.Int8 or BondType.Int16 or BondType.Int32 or BondType.Int64
-                or BondType.UInt8 or BondType.UInt16 or BondType.UInt32 or BondType.UInt64
-                or BondType.Float or BondType.Double or BondType.Bool
-                or BondType.String or BondType.WString or BondType.Blob
-                or BondType.MetaName or BondType.MetaFullName
-                or BondType.TypeParameter or BondType.IntTypeArg
-                => type,
-
-            // Container types - resolve element types recursively
-            BondType.List list => new BondType.List(
-                ResolveType(list.ElementType, namespaces, currentStruct, callerLocation)),
-
-            BondType.Vector vector => new BondType.Vector(
-                ResolveType(vector.ElementType, namespaces, currentStruct, callerLocation)),
-
-            BondType.Set set => new BondType.Set(
-                ResolveType(set.KeyType, namespaces, currentStruct, callerLocation)),
-
-            BondType.Map map => new BondType.Map(
-                ResolveType(map.KeyType, namespaces, currentStruct, callerLocation),
-                ResolveType(map.ValueType, namespaces, currentStruct, callerLocation)),
-
-            BondType.Nullable nullable => new BondType.Nullable(
-                ResolveType(nullable.ElementType, namespaces, currentStruct, callerLocation)),
-
-            BondType.Maybe maybe => new BondType.Maybe(
-                ResolveType(maybe.ElementType, namespaces, currentStruct, callerLocation)),
-
-            BondType.Bonded bonded => new BondType.Bonded(
-                ResolveType(bonded.StructType, namespaces, currentStruct, callerLocation)),
-
-            BondType.UnresolvedUserType unresolved =>
-                ResolveUnresolvedType(unresolved, namespaces, currentStruct, callerLocation),
-
-            // Already resolved, but type arguments might need resolution
-            BondType.UserDefined userDefined =>
-                ResolveUserDefinedType(userDefined, namespaces, currentStruct),
-
-            _ => throw new InvalidOperationException($"Unknown BondType: {type.GetType().Name}")
-        };
-    }
-
-    private BondType ResolveUnresolvedType(BondType.UnresolvedUserType unresolved, Namespace[] namespaces, StructDeclaration? currentStruct, SourceLocation callerLocation)
-    {
-        var declaration = symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
-
-        // Gracefully accept primitive types with different casing (e.g., "String")
-        if (declaration == null && unresolved.TypeArguments.Length == 0)
-        {
-            if (TryResolvePrimitive(unresolved.QualifiedName, out var primitive))
-            {
-                return primitive;
-            }
+            return primitive;
         }
 
-        if (declaration == null)
+        if (declaration is null)
         {
             throw new SemanticErrorException(
                 $"Type '{string.Join(".", unresolved.QualifiedName)}' not found in symbol table",
@@ -197,97 +111,47 @@ public class TypeResolver(SymbolTable symbolTable)
         }
 
         var resolvedTypeArgs = unresolved.TypeArguments
-            .Select(arg => ResolveType(arg, namespaces, currentStruct))
+            .Select(arg => ResolveType(arg, ctx, currentStruct, callerLocation))
             .ToArray();
 
-        // If this is a self-reference, emit a forward declaration to prevent infinite nesting
-        if (currentStruct != null &&
-            declaration is StructDeclaration structDecl &&
-            IsSameDeclaration(structDecl, currentStruct))
+        // Self-references become forward declarations to break the recursion.
+        if (currentStruct is not null && declaration is StructDeclaration s && IsSameDeclaration(s, currentStruct))
         {
-            var forward = new ForwardDeclaration
-            {
-                Namespaces = structDecl.Namespaces,
-                Name = structDecl.Name,
-                TypeParameters = structDecl.TypeParameters
-            };
-
-            return new BondType.UserDefined(forward, resolvedTypeArgs);
+            return new BondType.UserDefined(ToForward(s), resolvedTypeArgs);
         }
 
-        // Resolve alias chains before wrapping in UserDefined.
+        // Resolve the alias body before wrapping.
         if (declaration is AliasDeclaration alias)
         {
-            var resolvedAlias = ResolveAlias(alias, namespaces);
-            return new BondType.UserDefined(resolvedAlias, resolvedTypeArgs);
+            return new BondType.UserDefined(ResolveAlias(alias, ctx), resolvedTypeArgs);
         }
 
         return new BondType.UserDefined(declaration, resolvedTypeArgs);
     }
 
-    private static bool TryResolvePrimitive(string[] qualifiedName, out BondType primitive)
-    {
-        primitive = null!;
-        if (qualifiedName.Length != 1)
-        {
-            return false;
-        }
-
-        switch (qualifiedName[0].ToLowerInvariant())
-        {
-            case "int8": primitive = BondType.Int8.Instance; return true;
-            case "int16": primitive = BondType.Int16.Instance; return true;
-            case "int32": primitive = BondType.Int32.Instance; return true;
-            case "int64": primitive = BondType.Int64.Instance; return true;
-            case "uint8": primitive = BondType.UInt8.Instance; return true;
-            case "uint16": primitive = BondType.UInt16.Instance; return true;
-            case "uint32": primitive = BondType.UInt32.Instance; return true;
-            case "uint64": primitive = BondType.UInt64.Instance; return true;
-            case "float": primitive = BondType.Float.Instance; return true;
-            case "double": primitive = BondType.Double.Instance; return true;
-            case "bool": primitive = BondType.Bool.Instance; return true;
-            case "string": primitive = BondType.String.Instance; return true;
-            case "wstring": primitive = BondType.WString.Instance; return true;
-            case "blob": primitive = BondType.Blob.Instance; return true;
-            default: return false;
-        }
-    }
-
-    private BondType ResolveUserDefinedType(BondType.UserDefined userDefined, Namespace[] namespaces, StructDeclaration? currentStruct)
+    private static BondType ResolveUserDefinedType(BondType.UserDefined userDefined, Context ctx, StructDeclaration? currentStruct)
     {
         var qualifiedName = userDefined.Declaration.Namespaces.Length > 0
             ? userDefined.Declaration.Namespaces[0].Name.Concat([userDefined.Declaration.Name]).ToArray()
             : [userDefined.Declaration.Name];
 
-        var latestDeclaration = symbolTable.FindSymbol(qualifiedName, namespaces);
-        var declaration = latestDeclaration ?? userDefined.Declaration;
+        var declaration = ctx.Symbols.FindSymbol(qualifiedName, ctx.Namespaces, ctx.Aliases) ?? userDefined.Declaration;
 
         var resolvedTypeArgs = userDefined.TypeArguments
-            .Select(arg => ResolveType(arg, namespaces, currentStruct))
+            .Select(arg => ResolveType(arg, ctx, currentStruct, default))
             .ToArray();
 
-        // Preserve forward declarations for self references
-        if (currentStruct != null &&
-            declaration is StructDeclaration structDecl &&
-            IsSameDeclaration(structDecl, currentStruct))
+        if (currentStruct is not null && declaration is StructDeclaration s && IsSameDeclaration(s, currentStruct))
         {
-            var forward = new ForwardDeclaration
-            {
-                Namespaces = structDecl.Namespaces,
-                Name = structDecl.Name,
-                TypeParameters = structDecl.TypeParameters
-            };
-            return new BondType.UserDefined(forward, resolvedTypeArgs);
+            return new BondType.UserDefined(ToForward(s), resolvedTypeArgs);
         }
 
         if (declaration is AliasDeclaration alias)
         {
-            var resolvedAlias = ResolveAlias(alias, namespaces);
-            return new BondType.UserDefined(resolvedAlias, resolvedTypeArgs);
+            return new BondType.UserDefined(ResolveAlias(alias, ctx), resolvedTypeArgs);
         }
 
-        if (ReferenceEquals(declaration, userDefined.Declaration) &&
-            resolvedTypeArgs.SequenceEqual(userDefined.TypeArguments))
+        if (ReferenceEquals(declaration, userDefined.Declaration) && resolvedTypeArgs.SequenceEqual(userDefined.TypeArguments))
         {
             return userDefined;
         }
@@ -295,14 +159,41 @@ public class TypeResolver(SymbolTable symbolTable)
         return new BondType.UserDefined(declaration, resolvedTypeArgs);
     }
 
+    private static ForwardDeclaration ToForward(StructDeclaration s) => new()
+    {
+        Namespaces = s.Namespaces,
+        Name = s.Name,
+        TypeParameters = s.TypeParameters
+    };
+
     private static bool IsSameDeclaration(StructDeclaration declaration, StructDeclaration currentStruct)
     {
-        if (!string.Equals(declaration.Name, currentStruct.Name, StringComparison.Ordinal))
-        {
-            return false;
-        }
+        if (!string.Equals(declaration.Name, currentStruct.Name, StringComparison.Ordinal)) return false;
+        return declaration.Namespaces.Any(n => currentStruct.Namespaces.Any(n.Matches));
+    }
 
-        return declaration.Namespaces.Any(ns1 =>
-            currentStruct.Namespaces.Any(ns1.Matches));
+    private static bool TryResolvePrimitive(string[] qualifiedName, out BondType primitive)
+    {
+        primitive = null!;
+        if (qualifiedName.Length != 1) return false;
+
+        switch (qualifiedName[0].ToLowerInvariant())
+        {
+            case "int8":    primitive = BondType.Int8.Instance;    return true;
+            case "int16":   primitive = BondType.Int16.Instance;   return true;
+            case "int32":   primitive = BondType.Int32.Instance;   return true;
+            case "int64":   primitive = BondType.Int64.Instance;   return true;
+            case "uint8":   primitive = BondType.UInt8.Instance;   return true;
+            case "uint16":  primitive = BondType.UInt16.Instance;  return true;
+            case "uint32":  primitive = BondType.UInt32.Instance;  return true;
+            case "uint64":  primitive = BondType.UInt64.Instance;  return true;
+            case "float":   primitive = BondType.Float.Instance;   return true;
+            case "double":  primitive = BondType.Double.Instance;  return true;
+            case "bool":    primitive = BondType.Bool.Instance;    return true;
+            case "string":  primitive = BondType.String.Instance;  return true;
+            case "wstring": primitive = BondType.WString.Instance; return true;
+            case "blob":    primitive = BondType.Blob.Instance;    return true;
+            default: return false;
+        }
     }
 }

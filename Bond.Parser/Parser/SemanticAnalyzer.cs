@@ -9,13 +9,21 @@ using Bond.Parser.Grammar;
 namespace Bond.Parser.Parser;
 
 /// <summary>
-/// Performs semantic analysis on the AST
+/// Drives the semantic phase of parsing for a single Bond file:
+///   1. Process imports recursively, populating the shared SymbolTable.
+///   2. Register this file's declarations (structs/enums/services to the table,
+///      aliases to a per-file list).
+///   3. Resolve every UnresolvedUserType reference to a UserDefined wrapper.
+///   4. Validate the resolved AST.
+/// Validation operates on the resolved AST so checks are pure pattern matches —
+/// no side trips to the symbol table.
 /// </summary>
 public class SemanticAnalyzer
 {
     private readonly SymbolTable _symbolTable;
     private readonly ImportResolver _importResolver;
     private readonly string _currentFile;
+    private readonly List<AliasDeclaration> _aliases = [];
 
     public SemanticAnalyzer(SymbolTable symbolTable, ImportResolver importResolver, string currentFile)
     {
@@ -24,50 +32,63 @@ public class SemanticAnalyzer
         _currentFile = currentFile;
     }
 
-    /// <summary>
-    /// Analyzes a Bond AST
-    /// </summary>
-    public async Task AnalyzeAsync(Syntax.Bond bond)
+    public async Task<Syntax.Bond> AnalyzeAsync(Syntax.Bond bond)
     {
-        _symbolTable.PushAliasScope();
-        try
+        foreach (var import in bond.Imports)
         {
-            foreach (var import in bond.Imports)
-            {
-                await ProcessImportAsync(import);
-            }
-
-            foreach (var declaration in bond.Declarations)
-            {
-                _symbolTable.AddDeclaration(declaration);
-            }
-
-            // Validate after all symbols are registered so forward references resolve.
-            foreach (var declaration in bond.Declarations)
-            {
-                ValidateDeclaration(declaration);
-            }
+            await ProcessImportAsync(import);
         }
-        finally
+
+        foreach (var declaration in bond.Declarations)
         {
-            _symbolTable.PopAliasScope();
+            RegisterDeclaration(declaration);
         }
+
+        var resolved = TypeResolver.Resolve(bond, _symbolTable, _aliases);
+
+        foreach (var declaration in resolved.Declarations)
+        {
+            ValidateDeclaration(declaration);
+        }
+
+        return resolved;
+    }
+
+    private void RegisterDeclaration(Declaration declaration)
+    {
+        if (declaration is AliasDeclaration alias)
+        {
+            RegisterAlias(alias);
+            return;
+        }
+        _symbolTable.AddDeclaration(declaration);
+    }
+
+    private void RegisterAlias(AliasDeclaration alias)
+    {
+        var duplicate = _aliases.FirstOrDefault(existing =>
+            existing.Name == alias.Name &&
+            existing.Namespaces.Any(ns => alias.Namespaces.Any(ns.Matches)));
+
+        if (duplicate is not null)
+        {
+            throw new SemanticErrorException($"Duplicate declaration: alias '{alias.Name}' was already declared", alias.Location);
+        }
+        _aliases.Add(alias);
     }
 
     private async Task ProcessImportAsync(Import import)
     {
         var (canonicalPath, content) = await _importResolver(_currentFile, import.FilePath);
 
-        if (_symbolTable.IsImportProcessed(canonicalPath))
+        if (!_symbolTable.ClaimImport(canonicalPath))
         {
             return;
         }
 
-        _symbolTable.MarkImportProcessed(canonicalPath);
         var importAst = ParseContent(content, canonicalPath);
-
-        // Recursively analyze imports in the imported file, reusing the same symbol table
         var analyzer = new SemanticAnalyzer(_symbolTable, _importResolver, canonicalPath);
+        // Resolved AST is discarded — symbols are now in the table for lookups.
         await analyzer.AnalyzeAsync(importAst);
     }
 
@@ -93,62 +114,44 @@ public class SemanticAnalyzer
         return (Syntax.Bond)astBuilder.Visit(parseTree)!;
     }
 
-    private void ValidateDeclaration(Declaration declaration)
+    private static void ValidateDeclaration(Declaration declaration)
     {
         switch (declaration)
         {
-            case StructDeclaration structDecl:
-                ValidateStruct(structDecl);
-                break;
-            case EnumDeclaration enumDecl:
-                ValidateEnum(enumDecl);
-                break;
-            case ServiceDeclaration serviceDecl:
-                ValidateService(serviceDecl);
-                break;
+            case StructDeclaration structDecl: ValidateStruct(structDecl); break;
+            case EnumDeclaration enumDecl: ValidateEnum(enumDecl); break;
+            case ServiceDeclaration serviceDecl: ValidateService(serviceDecl); break;
         }
     }
 
-    private void ValidateStruct(StructDeclaration structDecl)
+    private static void ValidateStruct(StructDeclaration structDecl)
     {
         CheckForDuplicates(structDecl.Fields.Select(f => f.Ordinal), $"Struct '{structDecl.Name}'", "field ordinal", structDecl.Location);
         CheckForDuplicates(structDecl.Fields.Select(f => f.Name), $"Struct '{structDecl.Name}'", "field name", structDecl.Location);
 
         foreach (var field in structDecl.Fields)
         {
-            ValidateField(field, structDecl.Namespaces);
+            ValidateField(field);
         }
     }
 
-    private void ValidateEnum(EnumDeclaration enumDecl)
+    private static void ValidateEnum(EnumDeclaration enumDecl)
     {
         CheckForDuplicates(enumDecl.Constants.Select(c => c.Name), $"Enum '{enumDecl.Name}'", "constant name", enumDecl.Location);
     }
 
-    private void ValidateService(ServiceDeclaration serviceDecl)
+    private static void ValidateService(ServiceDeclaration serviceDecl)
     {
         CheckForDuplicates(serviceDecl.Methods.Select(m => m.Name), $"Service '{serviceDecl.Name}'", "method name", serviceDecl.Location);
 
-        if (serviceDecl.BaseType != null)
+        if (serviceDecl.BaseType is BondType.TypeParameter)
         {
-            if (serviceDecl.BaseType is BondType.TypeParameter)
-            {
-                throw new SemanticErrorException($"Service '{serviceDecl.Name}' cannot inherit from type parameter", serviceDecl.Location);
-            }
+            throw new SemanticErrorException($"Service '{serviceDecl.Name}' cannot inherit from type parameter", serviceDecl.Location);
+        }
 
-            if (serviceDecl.BaseType.IsStruct())
-            {
-                throw new SemanticErrorException($"Service '{serviceDecl.Name}' cannot inherit from struct", serviceDecl.Location);
-            }
-
-            if (serviceDecl.BaseType is BondType.UnresolvedUserType unresolved)
-            {
-                var baseDecl = _symbolTable.FindSymbol(unresolved.QualifiedName, serviceDecl.Namespaces);
-                if (baseDecl is StructDeclaration)
-                {
-                    throw new SemanticErrorException($"Service '{serviceDecl.Name}' cannot inherit from struct '{string.Join(".", unresolved.QualifiedName)}'", serviceDecl.Location);
-                }
-            }
+        if (serviceDecl.BaseType is not null && UnwrapAlias(serviceDecl.BaseType).IsStruct())
+        {
+            throw new SemanticErrorException($"Service '{serviceDecl.Name}' cannot inherit from struct", serviceDecl.Location);
         }
 
         foreach (var method in serviceDecl.Methods.OfType<EventMethod>())
@@ -162,130 +165,53 @@ public class SemanticAnalyzer
 
     private static void CheckForDuplicates<T>(IEnumerable<T> items, string context, string itemType, SourceLocation location)
     {
-        var duplicates = items
-            .GroupBy(x => x)
-            .Where(g => g.Count() > 1)
-            .Select(g => g.Key)
-            .ToList();
-
-        if (duplicates.Any())
+        var duplicates = items.GroupBy(x => x).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        if (duplicates.Count > 0)
         {
             throw new SemanticErrorException($"{context} has duplicate {itemType}(s): {string.Join(", ", duplicates)}", location);
         }
     }
 
-    /// <summary>
-    /// Resolves type aliases to their underlying types, including nested container types
-    /// </summary>
-    private BondType ResolveAliases(BondType type, Namespace[] namespaces)
+    private static void ValidateField(Field field)
     {
-        return ResolveAliases(type, namespaces, new HashSet<Declaration>());
-    }
+        var unwrapped = UnwrapAlias(field.Type);
 
-    private BondType ResolveAliases(BondType type, Namespace[] namespaces, HashSet<Declaration> visiting)
-    {
-        return type switch
-        {
-            BondType.UnresolvedUserType unresolved => ResolveAliasType(unresolved, namespaces, visiting),
-            BondType.List list => new BondType.List(ResolveAliases(list.ElementType, namespaces, visiting)),
-            BondType.Vector vector => new BondType.Vector(ResolveAliases(vector.ElementType, namespaces, visiting)),
-            BondType.Set set => new BondType.Set(ResolveAliases(set.KeyType, namespaces, visiting)),
-            BondType.Map map => new BondType.Map(ResolveAliases(map.KeyType, namespaces, visiting), ResolveAliases(map.ValueType, namespaces, visiting)),
-            BondType.Nullable nullable => new BondType.Nullable(ResolveAliases(nullable.ElementType, namespaces, visiting)),
-            BondType.Maybe maybe => new BondType.Maybe(ResolveAliases(maybe.ElementType, namespaces, visiting)),
-            BondType.Bonded bonded => new BondType.Bonded(ResolveAliases(bonded.StructType, namespaces, visiting)),
-            _ => type
-        };
-    }
-
-    private BondType ResolveAliasType(BondType.UnresolvedUserType unresolved, Namespace[] namespaces, HashSet<Declaration> visiting)
-    {
-        var decl = _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces);
-        if (decl is not AliasDeclaration alias)
-        {
-            return unresolved;
-        }
-
-        if (!visiting.Add(alias))
-        {
-            return unresolved;
-        }
-
-        var resolved = ResolveAliases(alias.AliasedType, namespaces, visiting);
-        visiting.Remove(alias);
-        return resolved;
-    }
-
-    private void ValidateField(Field field, Namespace[] namespaces)
-    {
-        var actualType = ResolveAliases(field.Type, namespaces);
-
-        // Validate map/set key types
-        if (actualType is BondType.Set set && !IsValidKeyType(set.KeyType, namespaces))
+        if (unwrapped is BondType.Set set && !UnwrapAlias(set.KeyType).IsValidKeyType())
         {
             throw new SemanticErrorException($"Field '{field.Name}' has invalid set key type {set.KeyType}", field.Location);
         }
-        if (actualType is BondType.Map map && !IsValidKeyType(map.KeyType, namespaces))
+        if (unwrapped is BondType.Map map && !UnwrapAlias(map.KeyType).IsValidKeyType())
         {
             throw new SemanticErrorException($"Field '{field.Name}' has invalid map key type {map.KeyType}", field.Location);
         }
 
-        if (!TypeValidator.ValidateDefaultValue(actualType, field.DefaultValue))
+        if (!TypeValidator.ValidateDefaultValue(unwrapped, field.DefaultValue))
         {
             throw new SemanticErrorException($"Field '{field.Name}' has invalid default value for type {field.Type}", field.Location);
         }
 
-        bool isEnumField = actualType.IsEnum();
-        if (!isEnumField && field.Type is BondType.UnresolvedUserType unresolvedEnum)
-        {
-            var decl = _symbolTable.FindSymbol(unresolvedEnum.QualifiedName, namespaces);
-            if (decl is EnumDeclaration)
-                isEnumField = true;
-        }
-
-        if (isEnumField && field.DefaultValue == null && field.Modifier != FieldModifier.Required)
+        if (unwrapped.IsEnum() && field.DefaultValue == null && field.Modifier != FieldModifier.Required)
         {
             throw new SemanticErrorException($"Enum field '{field.Name}' must have a default value", field.Location);
         }
 
-        // Structs cannot have default 'nothing' even when wrapped in Maybe
-        if (field.DefaultValue is Default.Nothing)
+        // Structs cannot have default 'nothing' even when wrapped in Maybe.
+        if (field.DefaultValue is Default.Nothing && UnwrapAlias(UnwrapMaybe(field.Type)).IsStruct())
         {
-            var underlying = UnwrapMaybe(field.Type);
-            if (IsStructType(underlying, namespaces))
-            {
-                throw new SemanticErrorException($"Struct field '{field.Name}' cannot have default value of 'nothing'", field.Location);
-            }
+            throw new SemanticErrorException($"Struct field '{field.Name}' cannot have default value of 'nothing'", field.Location);
         }
     }
 
-    private bool IsValidKeyType(BondType keyType, Namespace[] namespaces)
-    {
-        if (TypeValidator.IsValidKeyType(keyType))
-        {
-            return true;
-        }
+    private static BondType UnwrapMaybe(BondType type) =>
+        type is BondType.Maybe maybe ? maybe.ElementType : type;
 
-        if (keyType is BondType.UnresolvedUserType unresolved &&
-            _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces) is EnumDeclaration)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private BondType UnwrapMaybe(BondType type) => type is BondType.Maybe maybe ? maybe.ElementType : type;
-
-    private bool IsStructType(BondType type, Namespace[] namespaces)
-    {
-        BondType resolved = ResolveAliases(type, namespaces);
-
-        return resolved switch
-        {
-            BondType.UserDefined { Declaration: StructDeclaration or ForwardDeclaration } => true,
-            BondType.UnresolvedUserType unresolved => _symbolTable.FindSymbol(unresolved.QualifiedName, namespaces) is StructDeclaration,
-            _ => false
-        };
-    }
+    /// <summary>
+    /// Walks chains of resolved aliases (`UserDefined { Declaration: AliasDeclaration }`)
+    /// down to the underlying concrete type. Validation works on the unwrapped form so
+    /// `using Latency = int32` and `int32` behave identically.
+    /// </summary>
+    private static BondType UnwrapAlias(BondType type) =>
+        type is BondType.UserDefined { Declaration: AliasDeclaration alias }
+            ? UnwrapAlias(alias.AliasedType)
+            : type;
 }

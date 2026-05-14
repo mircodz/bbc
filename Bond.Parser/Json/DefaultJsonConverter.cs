@@ -1,20 +1,10 @@
-using System;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Json;
 
-/// <summary>
-/// JSON converter for Default values that matches the official Bond schema AST format
-/// </summary>
-public class DefaultJsonConverter : JsonConverter<Default>
+internal sealed class DefaultJsonConverter : WriteOnlyJsonConverter<Default>
 {
-    public override Default Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        throw new NotSupportedException("Deserialization not implemented");
-    }
-
     public override void Write(Utf8JsonWriter writer, Default value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();

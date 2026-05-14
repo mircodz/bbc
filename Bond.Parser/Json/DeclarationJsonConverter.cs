@@ -1,21 +1,13 @@
-using System;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Json;
 
 /// <summary>
-/// JSON converter for Declaration that matches the official Bond schema AST format
-/// Uses "tag" discriminator for different declaration types
+/// Uses a "tag" discriminator field to distinguish struct/enum/forward/alias/service.
 /// </summary>
-public class DeclarationJsonConverter : JsonConverter<Declaration>
+internal sealed class DeclarationJsonConverter : WriteOnlyJsonConverter<Declaration>
 {
-    public override Declaration Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        throw new NotSupportedException("Deserialization not implemented");
-    }
-
     public override void Write(Utf8JsonWriter writer, Declaration value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();

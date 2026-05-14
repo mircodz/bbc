@@ -1,20 +1,10 @@
-using System;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Json;
 
-/// <summary>
-/// JSON converter for MethodType
-/// </summary>
-public class MethodTypeJsonConverter : JsonConverter<MethodType>
+internal sealed class MethodTypeJsonConverter : WriteOnlyJsonConverter<MethodType>
 {
-    public override MethodType Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        throw new NotSupportedException("Deserialization not implemented");
-    }
-
     public override void Write(Utf8JsonWriter writer, MethodType value, JsonSerializerOptions options)
     {
         switch (value)
@@ -37,16 +27,8 @@ public class MethodTypeJsonConverter : JsonConverter<MethodType>
     }
 }
 
-/// <summary>
-/// JSON converter for Method (Event and Function)
-/// </summary>
-public class MethodJsonConverter : JsonConverter<Method>
+internal sealed class MethodJsonConverter : WriteOnlyJsonConverter<Method>
 {
-    public override Method Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        throw new NotSupportedException("Deserialization not implemented");
-    }
-
     public override void Write(Utf8JsonWriter writer, Method value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();

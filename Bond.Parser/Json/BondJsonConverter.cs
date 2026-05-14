@@ -1,19 +1,9 @@
-using System;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Bond.Parser.Json;
 
-/// <summary>
-/// JSON converter for Bond root AST node
-/// </summary>
-public class BondJsonConverter : JsonConverter<Syntax.Bond>
+internal sealed class BondJsonConverter : WriteOnlyJsonConverter<Syntax.Bond>
 {
-    public override Syntax.Bond Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        throw new NotSupportedException("Deserialization not implemented");
-    }
-
     public override void Write(Utf8JsonWriter writer, Syntax.Bond value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();

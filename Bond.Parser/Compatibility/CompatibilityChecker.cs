@@ -175,7 +175,7 @@ public class CompatibilityChecker
                 recommendation));
         }
 
-        if (!TypesEqual(oldField.Type, newField.Type))
+        if (oldField.Type != newField.Type)
         {
             var typeChange = ClassifyTypeChange(oldField.Type, newField.Type);
             changes.Add(new SchemaChange(
@@ -185,7 +185,7 @@ public class CompatibilityChecker
                 typeChange.Recommendation));
         }
 
-        if (!DefaultsEqual(oldField.DefaultValue, newField.DefaultValue))
+        if (oldField.DefaultValue != newField.DefaultValue)
         {
             changes.Add(new SchemaChange(
                 ChangeCategory.BreakingWire,
@@ -331,7 +331,7 @@ public class CompatibilityChecker
 
     private void CompareAliases(AliasDeclaration oldAlias, AliasDeclaration newAlias, List<SchemaChange> changes)
     {
-        if (!TypesEqual(oldAlias.AliasedType, newAlias.AliasedType))
+        if (oldAlias.AliasedType != newAlias.AliasedType)
         {
             var typeChange = ClassifyTypeChange(oldAlias.AliasedType, newAlias.AliasedType);
             changes.Add(new SchemaChange(
@@ -397,8 +397,8 @@ public class CompatibilityChecker
     private static bool IsVectorListChange(BondType type1, BondType type2) =>
         (type1, type2) switch
         {
-            (BondType.Vector v, BondType.List l)   => TypesEqual(v.ElementType, l.ElementType),
-            (BondType.List l,   BondType.Vector v) => TypesEqual(l.ElementType, v.ElementType),
+            (BondType.Vector v, BondType.List l)   => v.ElementType == l.ElementType,
+            (BondType.List l,   BondType.Vector v) => l.ElementType == v.ElementType,
             _ => false
         };
 
@@ -415,8 +415,8 @@ public class CompatibilityChecker
     private static bool IsBondedChange(BondType type1, BondType type2) =>
         (type1, type2) switch
         {
-            (BondType.Bonded bonded, var t) => TypesEqual(bonded.StructType, t),
-            (var t, BondType.Bonded bonded) => TypesEqual(t, bonded.StructType),
+            (BondType.Bonded bonded, var t) => bonded.StructType == t,
+            (var t, BondType.Bonded bonded) => t == bonded.StructType,
             _ => false
         };
 
@@ -443,13 +443,4 @@ public class CompatibilityChecker
     private static bool IsIntToEnumPromotion(BondType oldType, BondType newType) =>
         oldType is BondType.Int8 or BondType.Int16 &&
         newType is BondType.UserDefined { Declaration: EnumDeclaration };
-
-    // BondType.UserDefined and BondType.UnresolvedUserType override Equals to compare
-    // structurally (qualified name + element-wise type arguments), so container records
-    // (List, Map, Nullable, …) get correct == automatically through the record cascade.
-    private static bool TypesEqual(BondType type1, BondType type2) => type1 == type2;
-
-    // Default record equality handles all subtypes correctly. Unlike ToString(),
-    // this correctly distinguishes Default.Float(1.0) from Default.Integer(1).
-    private static bool DefaultsEqual(Default? default1, Default? default2) => default1 == default2;
 }

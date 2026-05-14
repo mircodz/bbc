@@ -6,33 +6,28 @@ using Bond.Parser.Syntax;
 namespace Bond.Parser.Parser;
 
 /// <summary>
-/// Tracks all declarations across files for symbol resolution
+/// Holds globally-visible declarations (structs, enums, services, forward decls)
+/// across the current file and its transitive imports, plus a set of import paths
+/// already processed. File-scoped declarations like aliases live outside this table —
+/// SemanticAnalyzer owns them per-file and passes them into FindSymbol.
 /// </summary>
 public class SymbolTable
 {
     private readonly List<Declaration> _globalDeclarations = [];
-    private readonly Stack<List<AliasDeclaration>> _aliasScopes = new();
     private readonly HashSet<string> _processedImports = [];
 
     /// <summary>
-    /// Adds a declaration to the symbol table with duplicate checking
+    /// Adds a declaration. Throws on a name collision unless the existing entry
+    /// is a forward declaration that the new one closes (or vice versa).
     /// </summary>
     public void AddDeclaration(Declaration declaration)
     {
-        if (declaration is AliasDeclaration alias)
-        {
-            AddAliasDeclaration(alias);
-            return;
-        }
-
-        // Find duplicates in the same namespace
         var duplicates = _globalDeclarations
             .Where(d => d.Name == declaration.Name && d.Namespaces.Any(ns1 => declaration.Namespaces.Any(ns1.Matches)))
             .ToList();
 
         foreach (var duplicate in duplicates)
         {
-            // Try to reconcile forward declarations with definitions
             if (!TryReconcile(duplicate, declaration))
             {
                 throw new InvalidOperationException($"Duplicate declaration: {declaration.Kind} '{declaration.Name}' was already declared as {duplicate.Kind}");
@@ -43,179 +38,68 @@ public class SymbolTable
     }
 
     /// <summary>
-    /// Finds a symbol by qualified name in the given namespaces
+    /// Looks up a declaration by qualified name. Per-file aliases are searched
+    /// first; then the global table.
     /// </summary>
-    public Declaration? FindSymbol(string[] qualifiedName, Namespace[] currentNamespaces)
+    public Declaration? FindSymbol(string[] qualifiedName, Namespace[] currentNamespaces, IReadOnlyList<AliasDeclaration> aliases)
     {
-        var alias = FindAlias(qualifiedName, currentNamespaces);
-        if (alias != null)
-        {
-            return alias;
-        }
-
-        return FindGlobalSymbol(qualifiedName, currentNamespaces);
-    }
-
-    /// <summary>
-    /// Finds a symbol by qualified name in the given namespaces from global declarations
-    /// </summary>
-    private Declaration? FindGlobalSymbol(string[] qualifiedName, Namespace[] currentNamespaces)
-    {
-        if (qualifiedName.Length == 1)
-        {
-            // Unqualified name - search in current namespaces
-            return _globalDeclarations.FirstOrDefault(d =>
-                d.Name == qualifiedName[0] &&
-                d.Namespaces.Any(ns1 => currentNamespaces.Any(ns1.Matches)));
-        }
-        else
-        {
-            // Qualified name - match namespace and name
-            var namespacePart = qualifiedName[..^1];
-            var namePart = qualifiedName[^1];
-
-            return _globalDeclarations.FirstOrDefault(d =>
-                d.Name == namePart &&
-                d.Namespaces.Any(ns => ns.Name.SequenceEqual(namespacePart)));
-        }
-    }
-
-    /// <summary>
-    /// Finds a struct declaration
-    /// </summary>
-    public StructDeclaration? FindStruct(string[] qualifiedName, Namespace[] currentNamespaces)
-    {
-        var symbol = FindGlobalSymbol(qualifiedName, currentNamespaces);
-        return symbol as StructDeclaration;
-    }
-
-    /// <summary>
-    /// Checks if an import has been processed
-    /// </summary>
-    public bool IsImportProcessed(string canonicalPath)
-    {
-        return _processedImports.Contains(canonicalPath);
-    }
-
-    /// <summary>
-    /// Marks an import as processed
-    /// </summary>
-    public void MarkImportProcessed(string canonicalPath)
-    {
-        _processedImports.Add(canonicalPath);
-    }
-
-    /// <summary>
-    /// Gets all declarations
-    /// </summary>
-    public IReadOnlyList<Declaration> GlobalDeclarations => _globalDeclarations.AsReadOnly();
-
-    /// <summary>
-    /// Pushes a new alias scope for a file.
-    /// </summary>
-    public void PushAliasScope()
-    {
-        _aliasScopes.Push([]);
-    }
-
-    /// <summary>
-    /// Pops the current alias scope.
-    /// </summary>
-    public void PopAliasScope()
-    {
-        if (_aliasScopes.Count == 0)
-        {
-            throw new InvalidOperationException("Alias scope stack is empty");
-        }
-
-        _aliasScopes.Pop();
-    }
-
-    /// <summary>
-    /// Clears all declarations from the symbol table
-    /// </summary>
-    public void ClearGlobalDeclarations()
-    {
-        _globalDeclarations.Clear();
-    }
-
-    /// <summary>
-    /// Clears all alias scopes
-    /// </summary>
-    public void ClearAliasScopes()
-    {
-        _aliasScopes.Clear();
-    }
-
-    private void AddAliasDeclaration(AliasDeclaration alias)
-    {
-        if (_aliasScopes.Count == 0)
-        {
-            throw new InvalidOperationException("Alias scope is not initialized");
-        }
-
-        var scope = _aliasScopes.Peek();
-        var duplicates = scope
-            .Where(d => d.Name == alias.Name && d.Namespaces.Any(ns1 => alias.Namespaces.Any(ns1.Matches)))
-            .ToList();
-
-        if (duplicates.Count > 0)
-        {
-            throw new InvalidOperationException($"Duplicate declaration: alias '{alias.Name}' was already declared as alias");
-        }
-
-        scope.Add(alias);
-    }
-
-    private AliasDeclaration? FindAlias(string[] qualifiedName, Namespace[] currentNamespaces)
-    {
-        if (_aliasScopes.Count == 0)
-        {
-            return null;
-        }
-
-        var scope = _aliasScopes.Peek();
+        var alias = FindAlias(qualifiedName, currentNamespaces, aliases);
+        if (alias != null) return alias;
 
         if (qualifiedName.Length == 1)
         {
-            return scope.FirstOrDefault(d =>
+            return _globalDeclarations.FirstOrDefault(d =>
                 d.Name == qualifiedName[0] &&
                 d.Namespaces.Any(ns1 => currentNamespaces.Any(ns1.Matches)));
         }
 
         var namespacePart = qualifiedName[..^1];
         var namePart = qualifiedName[^1];
-        return scope.FirstOrDefault(d =>
+        return _globalDeclarations.FirstOrDefault(d =>
             d.Name == namePart &&
             d.Namespaces.Any(ns => ns.Name.SequenceEqual(namespacePart)));
     }
 
+    /// <summary>
+    /// Records that an import path has been processed. Returns true if newly
+    /// claimed, false if a previous call already claimed it (cycle / diamond).
+    /// </summary>
+    public bool ClaimImport(string canonicalPath) => _processedImports.Add(canonicalPath);
+
+    private static AliasDeclaration? FindAlias(string[] qualifiedName, Namespace[] currentNamespaces, IReadOnlyList<AliasDeclaration> aliases)
+    {
+        if (qualifiedName.Length == 1)
+        {
+            return aliases.FirstOrDefault(a =>
+                a.Name == qualifiedName[0] &&
+                a.Namespaces.Any(ns1 => currentNamespaces.Any(ns1.Matches)));
+        }
+
+        var namespacePart = qualifiedName[..^1];
+        var namePart = qualifiedName[^1];
+        return aliases.FirstOrDefault(a =>
+            a.Name == namePart &&
+            a.Namespaces.Any(ns => ns.Name.SequenceEqual(namespacePart)));
+    }
+
     private static bool TryReconcile(Declaration existing, Declaration newDeclaration)
     {
-        // Forward declaration can be reconciled with struct definition
         if (existing is ForwardDeclaration forward && newDeclaration is StructDeclaration)
-        {
             return ParametersMatch(forward.TypeParameters, newDeclaration.TypeParameters);
-        }
 
         if (existing is StructDeclaration && newDeclaration is ForwardDeclaration forward2)
-        {
             return ParametersMatch(existing.TypeParameters, forward2.TypeParameters);
-        }
 
-        // Allow identical duplicate definitions (happens when parsing same import multiple times)
         return existing.Equals(newDeclaration);
     }
 
-    private static bool ParametersMatch(TypeParam[] params1, TypeParam[] params2)
+    private static bool ParametersMatch(TypeParam[] a, TypeParam[] b)
     {
-        if (params1.Length != params2.Length)
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++)
         {
-            return false;
+            if (a[i].Constraint != b[i].Constraint) return false;
         }
-
-        return !params1
-            .Where((t, i) => t.Constraint != params2[i].Constraint)
-            .Any();
+        return true;
     }
 }
