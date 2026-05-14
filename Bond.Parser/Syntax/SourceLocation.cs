@@ -1,9 +1,6 @@
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Immutable source position within a Bond IDL file.
-/// Line and Column are 1-based. The default (zero-valued) instance means unknown.
-/// </summary>
+/// <summary>1-based source position. Default value means unknown.</summary>
 public readonly record struct SourceLocation(int Line, int Column)
 {
     public static readonly SourceLocation Unknown = default;

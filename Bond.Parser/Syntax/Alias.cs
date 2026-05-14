@@ -2,9 +2,6 @@ using System.Linq;
 
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Represents a type alias declaration
-/// </summary>
 public sealed record AliasDeclaration : Declaration
 {
     public required BondType AliasedType { get; init; }

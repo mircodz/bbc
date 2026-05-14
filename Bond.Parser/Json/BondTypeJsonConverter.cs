@@ -1,25 +1,14 @@
-using System;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Json;
 
-/// <summary>
-/// JSON converter for BondType that matches the official Bond schema AST format
-/// </summary>
-public class BondTypeJsonConverter : JsonConverter<BondType>
+internal sealed class BondTypeJsonConverter : WriteOnlyJsonConverter<BondType>
 {
-    public override BondType Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        throw new NotSupportedException("Deserialization not implemented");
-    }
-
     public override void Write(Utf8JsonWriter writer, BondType value, JsonSerializerOptions options)
     {
         switch (value)
         {
-            // Primitive types - serialize as strings
             case BondType.Int8:
                 writer.WriteStringValue("int8");
                 break;
@@ -69,7 +58,6 @@ public class BondTypeJsonConverter : JsonConverter<BondType>
                 writer.WriteStringValue("bond_meta::full_name");
                 break;
 
-            // Container types - serialize as objects
             case BondType.List list:
                 writer.WriteStartObject();
                 writer.WriteString("type", "list");
@@ -128,16 +116,15 @@ public class BondTypeJsonConverter : JsonConverter<BondType>
                 writer.WriteEndObject();
                 break;
 
-            // User-defined types
-            case BondType.UserDefined userDefined:
+            case BondType.TypeReference typeReference:
                 writer.WriteStartObject();
                 writer.WriteString("type", "user");
                 writer.WritePropertyName("declaration");
-                JsonSerializer.Serialize(writer, userDefined.Declaration, options);
-                if (userDefined.TypeArguments.Length > 0)
+                JsonSerializer.Serialize(writer, typeReference.Declaration, options);
+                if (typeReference.TypeArguments.Length > 0)
                 {
                     writer.WritePropertyName("arguments");
-                    JsonSerializer.Serialize(writer, userDefined.TypeArguments, options);
+                    JsonSerializer.Serialize(writer, typeReference.TypeArguments, options);
                 }
                 writer.WriteEndObject();
                 break;
@@ -158,9 +145,8 @@ public class BondTypeJsonConverter : JsonConverter<BondType>
                 writer.WriteEndObject();
                 break;
 
-            case BondType.UnresolvedUserType unresolvedType:
-                // This should not occur after semantic analysis, but handle it gracefully
-                throw new JsonException($"Cannot serialize unresolved user type: {string.Join(".", unresolvedType.QualifiedName)}. The schema must pass semantic analysis before JSON serialization.");
+            case BondType.UnresolvedType unresolvedType:
+                throw new JsonException($"Cannot serialize unresolved type '{string.Join(".", unresolvedType.QualifiedName)}' — schema must pass semantic analysis first.");
 
             default:
                 throw new JsonException($"Unknown BondType: {value.GetType().Name}");

@@ -1037,7 +1037,7 @@ public class ParserFacadeTests
 
         result.Success.Should().BeTrue();
         var field = result.Ast!.Declarations.OfType<StructDeclaration>().Single().Fields.Single();
-        field.Type.Should().BeOfType<BondType.UserDefined>();
+        field.Type.Should().BeOfType<BondType.TypeReference>();
     }
 
     [Fact]
@@ -1116,7 +1116,7 @@ public class ParserFacadeTests
 
         result.Success.Should().BeTrue();
         var user = result.Ast!.Declarations.OfType<StructDeclaration>().First(d => d.Name == "User");
-        var fieldType = user.Fields[0].Type as BondType.UserDefined;
+        var fieldType = user.Fields[0].Type as BondType.TypeReference;
         fieldType.Should().NotBeNull();
         var alias = fieldType!.Declaration.Should().BeOfType<AliasDeclaration>().Subject;
         alias.AliasedType.Should().BeOfType<BondType.String>();

@@ -2,9 +2,6 @@ using System.Linq;
 
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Represents a struct declaration
-/// </summary>
 public sealed record StructDeclaration : Declaration
 {
     public required Attribute[] Attributes { get; init; }

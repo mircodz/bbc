@@ -1,20 +1,10 @@
-using System;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Json;
 
-/// <summary>
-/// JSON converter for Field that matches the official Bond schema AST format
-/// </summary>
-public class FieldJsonConverter : JsonConverter<Field>
+internal sealed class FieldJsonConverter : WriteOnlyJsonConverter<Field>
 {
-    public override Field Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        throw new NotSupportedException("Deserialization not implemented");
-    }
-
     public override void Write(Utf8JsonWriter writer, Field value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
