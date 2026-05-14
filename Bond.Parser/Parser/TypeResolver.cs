@@ -30,7 +30,6 @@ public static class TypeResolver
             StructDeclaration s => ResolveStruct(s, ctx),
             AliasDeclaration a => ResolveAlias(a, ctx),
             ServiceDeclaration s => ResolveService(s, ctx),
-            EnumDeclaration or ForwardDeclaration => declaration,
             _ => declaration
         };
 

@@ -239,18 +239,16 @@ public static class Program
 
     static async Task<string?> RunGitCommand(string arguments, string? workingDirectory = null)
     {
-        using var process = new System.Diagnostics.Process
+        using var process = new System.Diagnostics.Process();
+        process.StartInfo = new System.Diagnostics.ProcessStartInfo
         {
-            StartInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "git",
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
-                CreateNoWindow = true
-            }
+            FileName = "git",
+            Arguments = arguments,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
+            CreateNoWindow = true
         };
 
         process.Start();

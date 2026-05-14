@@ -1,12 +1,11 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Json;
 
-internal sealed class AttributeJsonConverter : WriteOnlyJsonConverter<Syntax.Attribute>
+internal sealed class AttributeJsonConverter : WriteOnlyJsonConverter<Attribute>
 {
-    public override void Write(Utf8JsonWriter writer, Syntax.Attribute value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, Attribute value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
 
