@@ -1,3 +1,4 @@
+using System.Linq;
 using Bond.Parser.Syntax;
 using Bond.Parser.Util;
 
@@ -30,7 +31,8 @@ public static class TypeValidator
             (BondType.Bool,   Default.Bool) => true,
             (BondType.String, Default.String) => true,
             (BondType.WString, Default.String) => true,
-            (BondType.TypeReference { Declaration: EnumDeclaration }, Default.Enum or Default.Nothing) => true,
+            (BondType.TypeReference { Declaration: EnumDeclaration e }, Default.Enum d) => e.Constants.Any(c => c.Name == d.Identifier),
+            (BondType.TypeReference { Declaration: EnumDeclaration }, Default.Nothing) => true,
             (BondType.TypeParameter, _) => true,
             _ => false
         };
