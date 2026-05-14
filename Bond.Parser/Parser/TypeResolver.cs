@@ -303,21 +303,6 @@ public class TypeResolver(SymbolTable symbolTable)
         }
 
         return declaration.Namespaces.Any(ns1 =>
-            currentStruct.Namespaces.Any(ns2 => NamespacesMatch(ns1, ns2)));
-    }
-
-    private static bool NamespacesMatch(Namespace ns1, Namespace ns2)
-    {
-        if (!ns1.Name.SequenceEqual(ns2.Name))
-        {
-            return false;
-        }
-
-        if (ns1.LanguageQualifier.HasValue && ns2.LanguageQualifier.HasValue)
-        {
-            return ns1.LanguageQualifier == ns2.LanguageQualifier;
-        }
-
-        return true;
+            currentStruct.Namespaces.Any(ns1.Matches));
     }
 }

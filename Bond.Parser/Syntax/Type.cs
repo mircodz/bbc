@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 
 namespace Bond.Parser.Syntax;
@@ -166,6 +167,22 @@ public abstract record BondType
             }
             return name;
         }
+
+        // Two parses produce distinct Declaration instances even for identical
+        // schemas, so identity is the qualified name plus structural equality on
+        // TypeArguments (the synthesized record == would compare by reference).
+        public bool Equals(UserDefined? other) =>
+            other is not null
+            && Declaration.QualifiedName == other.Declaration.QualifiedName
+            && TypeArguments.AsSpan().SequenceEqual(other.TypeArguments);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            hash.Add(Declaration.QualifiedName);
+            foreach (var t in TypeArguments) hash.Add(t);
+            return hash.ToHashCode();
+        }
     }
 
     public sealed record TypeParameter(TypeParam Param) : BondType
@@ -196,6 +213,21 @@ public abstract record BondType
                 return $"{name}<{string.Join(", ", TypeArguments.Select(t => t.ToString()))}>";
             }
             return name;
+        }
+
+        // The synthesized record == would compare the string[] and BondType[]
+        // by reference, so two parses of the same schema never compare equal.
+        public bool Equals(UnresolvedUserType? other) =>
+            other is not null
+            && QualifiedName.AsSpan().SequenceEqual(other.QualifiedName)
+            && TypeArguments.AsSpan().SequenceEqual(other.TypeArguments);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            foreach (var s in QualifiedName) hash.Add(s);
+            foreach (var t in TypeArguments) hash.Add(t);
+            return hash.ToHashCode();
         }
     }
 }

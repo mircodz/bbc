@@ -27,7 +27,7 @@ public class SymbolTable
 
         // Find duplicates in the same namespace
         var duplicates = _globalDeclarations
-            .Where(d => d.Name == declaration.Name && d.Namespaces.Any(ns1 => declaration.Namespaces.Any(ns2 => NamespacesMatch(ns1, ns2))))
+            .Where(d => d.Name == declaration.Name && d.Namespaces.Any(ns1 => declaration.Namespaces.Any(ns1.Matches)))
             .ToList();
 
         foreach (var duplicate in duplicates)
@@ -66,7 +66,7 @@ public class SymbolTable
             // Unqualified name - search in current namespaces
             return _globalDeclarations.FirstOrDefault(d =>
                 d.Name == qualifiedName[0] &&
-                d.Namespaces.Any(ns1 => currentNamespaces.Any(ns2 => NamespacesMatch(ns1, ns2))));
+                d.Namespaces.Any(ns1 => currentNamespaces.Any(ns1.Matches)));
         }
         else
         {
@@ -156,7 +156,7 @@ public class SymbolTable
 
         var scope = _aliasScopes.Peek();
         var duplicates = scope
-            .Where(d => d.Name == alias.Name && d.Namespaces.Any(ns1 => alias.Namespaces.Any(ns2 => NamespacesMatch(ns1, ns2))))
+            .Where(d => d.Name == alias.Name && d.Namespaces.Any(ns1 => alias.Namespaces.Any(ns1.Matches)))
             .ToList();
 
         if (duplicates.Count > 0)
@@ -180,7 +180,7 @@ public class SymbolTable
         {
             return scope.FirstOrDefault(d =>
                 d.Name == qualifiedName[0] &&
-                d.Namespaces.Any(ns1 => currentNamespaces.Any(ns2 => NamespacesMatch(ns1, ns2))));
+                d.Namespaces.Any(ns1 => currentNamespaces.Any(ns1.Matches)));
         }
 
         var namespacePart = qualifiedName[..^1];
@@ -188,23 +188,6 @@ public class SymbolTable
         return scope.FirstOrDefault(d =>
             d.Name == namePart &&
             d.Namespaces.Any(ns => ns.Name.SequenceEqual(namespacePart)));
-    }
-
-    private static bool NamespacesMatch(Namespace ns1, Namespace ns2)
-    {
-        if (!ns1.Name.SequenceEqual(ns2.Name))
-        {
-            return false;
-        }
-
-        // If both specify a language, they must match
-        if (ns1.LanguageQualifier.HasValue && ns2.LanguageQualifier.HasValue)
-        {
-            return ns1.LanguageQualifier == ns2.LanguageQualifier;
-        }
-
-        // If only one specifies a language, they still match (language-agnostic)
-        return true;
     }
 
     private static bool TryReconcile(Declaration existing, Declaration newDeclaration)
