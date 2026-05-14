@@ -18,7 +18,6 @@ internal sealed class DeclarationJsonConverter : WriteOnlyJsonConverter<Declarat
         writer.WritePropertyName("declNamespaces");
         JsonSerializer.Serialize(writer, value.Namespaces, options);
 
-        // Type-specific properties
         switch (value)
         {
             case StructDeclaration structDecl:

@@ -3,9 +3,6 @@ using System.Linq;
 
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Represents all possible Bond types
-/// </summary>
 public abstract record BondType
 {
     private BondType() { }
@@ -155,8 +152,9 @@ public abstract record BondType
         public override string ToString() => "bond_meta::full_name";
     }
 
-    // User-defined types
-    public sealed record UserDefined(Declaration Declaration, BondType[] TypeArguments) : BondType
+    // Resolved reference to a named declaration; TypeArguments hold the generic
+    // instantiation (empty for non-generic refs).
+    public sealed record TypeReference(Declaration Declaration, BondType[] TypeArguments) : BondType
     {
         public override string ToString()
         {
@@ -168,10 +166,9 @@ public abstract record BondType
             return name;
         }
 
-        // Two parses produce distinct Declaration instances even for identical
-        // schemas, so identity is the qualified name plus structural equality on
-        // TypeArguments (the synthesized record == would compare by reference).
-        public bool Equals(UserDefined? other) =>
+        // Identity is qualified name + element-wise type args. Synthesized record ==
+        // would compare Declaration by reference, which differs across parses.
+        public bool Equals(TypeReference? other) =>
             other is not null
             && Declaration.QualifiedName == other.Declaration.QualifiedName
             && TypeArguments.AsSpan().SequenceEqual(other.TypeArguments);
@@ -190,20 +187,21 @@ public abstract record BondType
         public override string ToString() => Param.Name;
     }
 
-    // Maybe wrapper (created when default is 'nothing')
+    // Inserted by AstBuilder when a field has a `nothing` default.
     public sealed record Maybe(BondType ElementType) : BondType
     {
         public override string ToString() => $"nullable<{ElementType}>";
     }
 
-    // Integer type argument for generic instantiation
+    // Integer literal as a generic type argument (e.g., vector<T, 32>).
     public sealed record IntTypeArg(long Value) : BondType
     {
         public override string ToString() => Value.ToString();
     }
 
-    // Unresolved user-defined type (resolved by semantic analyzer)
-    public sealed record UnresolvedUserType(string[] QualifiedName, BondType[] TypeArguments) : BondType
+    // Pre-resolution: a name plus type args, no Declaration yet. Replaced by
+    // TypeReference during semantic analysis.
+    public sealed record UnresolvedType(string[] QualifiedName, BondType[] TypeArguments) : BondType
     {
         public override string ToString()
         {
@@ -215,9 +213,8 @@ public abstract record BondType
             return name;
         }
 
-        // The synthesized record == would compare the string[] and BondType[]
-        // by reference, so two parses of the same schema never compare equal.
-        public bool Equals(UnresolvedUserType? other) =>
+        // Synthesized record == compares the string[] and BondType[] by reference.
+        public bool Equals(UnresolvedType? other) =>
             other is not null
             && QualifiedName.AsSpan().SequenceEqual(other.QualifiedName)
             && TypeArguments.AsSpan().SequenceEqual(other.TypeArguments);
@@ -232,9 +229,6 @@ public abstract record BondType
     }
 }
 
-/// <summary>
-/// Helper methods for type classification
-/// </summary>
 public static class BondTypeExtensions
 {
     public static bool IsScalar(this BondType type) =>
@@ -246,10 +240,10 @@ public static class BondTypeExtensions
         type is BondType.String or BondType.WString;
 
     public static bool IsEnum(this BondType type) =>
-        type is BondType.UserDefined { Declaration: EnumDeclaration };
+        type is BondType.TypeReference { Declaration: EnumDeclaration };
 
     public static bool IsStruct(this BondType type) =>
-        type is BondType.UserDefined { Declaration: StructDeclaration or ForwardDeclaration };
+        type is BondType.TypeReference { Declaration: StructDeclaration or ForwardDeclaration };
 
     public static bool IsValidKeyType(this BondType type) =>
         type.IsScalar() || type.IsString() || type.IsEnum() || type is BondType.TypeParameter;

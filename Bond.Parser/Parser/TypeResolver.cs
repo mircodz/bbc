@@ -6,7 +6,7 @@ using Bond.Parser.Syntax;
 namespace Bond.Parser.Parser;
 
 /// <summary>
-/// Walks an AST and replaces every UnresolvedUserType with a UserDefined wrapper
+/// Walks an AST and replaces every UnresolvedType with a TypeReference wrapper
 /// around the resolved Declaration. Operates against a populated SymbolTable plus
 /// the current file's alias list.
 /// </summary>
@@ -88,13 +88,13 @@ public static class TypeResolver
         BondType.Maybe m => new BondType.Maybe(ResolveType(m.ElementType, ctx, currentStruct, callerLocation)),
         BondType.Bonded b => new BondType.Bonded(ResolveType(b.StructType, ctx, currentStruct, callerLocation)),
 
-        BondType.UnresolvedUserType u => ResolveUnresolvedType(u, ctx, currentStruct, callerLocation),
-        BondType.UserDefined u => ResolveUserDefinedType(u, ctx, currentStruct),
+        BondType.UnresolvedType u => ResolveUnresolvedType(u, ctx, currentStruct, callerLocation),
+        BondType.TypeReference u => ResolveTypeReference(u, ctx, currentStruct),
 
         _ => throw new InvalidOperationException($"Unknown BondType: {type.GetType().Name}")
     };
 
-    private static BondType ResolveUnresolvedType(BondType.UnresolvedUserType unresolved, Context ctx, StructDeclaration? currentStruct, SourceLocation callerLocation)
+    private static BondType ResolveUnresolvedType(BondType.UnresolvedType unresolved, Context ctx, StructDeclaration? currentStruct, SourceLocation callerLocation)
     {
         var declaration = ctx.Symbols.FindSymbol(unresolved.QualifiedName, ctx.Namespaces, ctx.Aliases);
 
@@ -117,46 +117,46 @@ public static class TypeResolver
         // Self-references become forward declarations to break the recursion.
         if (currentStruct is not null && declaration is StructDeclaration s && IsSameDeclaration(s, currentStruct))
         {
-            return new BondType.UserDefined(ToForward(s), resolvedTypeArgs);
+            return new BondType.TypeReference(ToForward(s), resolvedTypeArgs);
         }
 
         // Resolve the alias body before wrapping.
         if (declaration is AliasDeclaration alias)
         {
-            return new BondType.UserDefined(ResolveAlias(alias, ctx), resolvedTypeArgs);
+            return new BondType.TypeReference(ResolveAlias(alias, ctx), resolvedTypeArgs);
         }
 
-        return new BondType.UserDefined(declaration, resolvedTypeArgs);
+        return new BondType.TypeReference(declaration, resolvedTypeArgs);
     }
 
-    private static BondType ResolveUserDefinedType(BondType.UserDefined userDefined, Context ctx, StructDeclaration? currentStruct)
+    private static BondType ResolveTypeReference(BondType.TypeReference typeReference, Context ctx, StructDeclaration? currentStruct)
     {
-        var qualifiedName = userDefined.Declaration.Namespaces.Length > 0
-            ? userDefined.Declaration.Namespaces[0].Name.Concat([userDefined.Declaration.Name]).ToArray()
-            : [userDefined.Declaration.Name];
+        var qualifiedName = typeReference.Declaration.Namespaces.Length > 0
+            ? typeReference.Declaration.Namespaces[0].Name.Concat([typeReference.Declaration.Name]).ToArray()
+            : [typeReference.Declaration.Name];
 
-        var declaration = ctx.Symbols.FindSymbol(qualifiedName, ctx.Namespaces, ctx.Aliases) ?? userDefined.Declaration;
+        var declaration = ctx.Symbols.FindSymbol(qualifiedName, ctx.Namespaces, ctx.Aliases) ?? typeReference.Declaration;
 
-        var resolvedTypeArgs = userDefined.TypeArguments
+        var resolvedTypeArgs = typeReference.TypeArguments
             .Select(arg => ResolveType(arg, ctx, currentStruct, default))
             .ToArray();
 
         if (currentStruct is not null && declaration is StructDeclaration s && IsSameDeclaration(s, currentStruct))
         {
-            return new BondType.UserDefined(ToForward(s), resolvedTypeArgs);
+            return new BondType.TypeReference(ToForward(s), resolvedTypeArgs);
         }
 
         if (declaration is AliasDeclaration alias)
         {
-            return new BondType.UserDefined(ResolveAlias(alias, ctx), resolvedTypeArgs);
+            return new BondType.TypeReference(ResolveAlias(alias, ctx), resolvedTypeArgs);
         }
 
-        if (ReferenceEquals(declaration, userDefined.Declaration) && resolvedTypeArgs.SequenceEqual(userDefined.TypeArguments))
+        if (ReferenceEquals(declaration, typeReference.Declaration) && resolvedTypeArgs.SequenceEqual(typeReference.TypeArguments))
         {
-            return userDefined;
+            return typeReference;
         }
 
-        return new BondType.UserDefined(declaration, resolvedTypeArgs);
+        return new BondType.TypeReference(declaration, resolvedTypeArgs);
     }
 
     private static ForwardDeclaration ToForward(StructDeclaration s) => new()

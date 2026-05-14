@@ -30,7 +30,7 @@ public static class TypeValidator
             (BondType.Bool,   Default.Bool) => true,
             (BondType.String, Default.String) => true,
             (BondType.WString, Default.String) => true,
-            (BondType.UserDefined { Declaration: EnumDeclaration }, Default.Enum or Default.Nothing) => true,
+            (BondType.TypeReference { Declaration: EnumDeclaration }, Default.Enum or Default.Nothing) => true,
             (BondType.TypeParameter, _) => true,
             _ => false
         };

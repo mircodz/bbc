@@ -6,10 +6,9 @@ using Bond.Parser.Syntax;
 namespace Bond.Parser.Parser;
 
 /// <summary>
-/// Holds globally-visible declarations (structs, enums, services, forward decls)
-/// across the current file and its transitive imports, plus a set of import paths
-/// already processed. File-scoped declarations like aliases live outside this table —
-/// SemanticAnalyzer owns them per-file and passes them into FindSymbol.
+/// Globally-visible declarations across this file and its transitive imports,
+/// plus the set of import paths already processed. File-scoped aliases live
+/// outside this table — SemanticAnalyzer owns them per-file.
 /// </summary>
 public class SymbolTable
 {
@@ -17,8 +16,8 @@ public class SymbolTable
     private readonly HashSet<string> _processedImports = [];
 
     /// <summary>
-    /// Adds a declaration. Throws on a name collision unless the existing entry
-    /// is a forward declaration that the new one closes (or vice versa).
+    /// Throws on name collision unless the existing entry is a forward declaration
+    /// that the new one closes (or vice versa).
     /// </summary>
     public void AddDeclaration(Declaration declaration)
     {
@@ -30,17 +29,16 @@ public class SymbolTable
         {
             if (!TryReconcile(duplicate, declaration))
             {
-                throw new InvalidOperationException($"Duplicate declaration: {declaration.Kind} '{declaration.Name}' was already declared as {duplicate.Kind}");
+                throw new SemanticErrorException(
+                    $"Duplicate declaration: {declaration.Kind} '{declaration.Name}' was already declared as {duplicate.Kind}",
+                    declaration.Location);
             }
         }
 
         _globalDeclarations.Add(declaration);
     }
 
-    /// <summary>
-    /// Looks up a declaration by qualified name. Per-file aliases are searched
-    /// first; then the global table.
-    /// </summary>
+    /// <summary>Aliases first, then the global table.</summary>
     public Declaration? FindSymbol(string[] qualifiedName, Namespace[] currentNamespaces, IReadOnlyList<AliasDeclaration> aliases)
     {
         var alias = FindAlias(qualifiedName, currentNamespaces, aliases);
@@ -60,10 +58,7 @@ public class SymbolTable
             d.Namespaces.Any(ns => ns.Name.SequenceEqual(namespacePart)));
     }
 
-    /// <summary>
-    /// Records that an import path has been processed. Returns true if newly
-    /// claimed, false if a previous call already claimed it (cycle / diamond).
-    /// </summary>
+    /// <summary>Returns true on first claim, false on cycle / diamond import.</summary>
     public bool ClaimImport(string canonicalPath) => _processedImports.Add(canonicalPath);
 
     private static AliasDeclaration? FindAlias(string[] qualifiedName, Namespace[] currentNamespaces, IReadOnlyList<AliasDeclaration> aliases)
@@ -82,6 +77,9 @@ public class SymbolTable
             a.Namespaces.Any(ns => ns.Name.SequenceEqual(namespacePart)));
     }
 
+    // Forward + struct (in either order) reconciles when the type-parameter shape
+    // matches. Identical re-declarations also pass — happens when the same import
+    // is seen via multiple paths.
     private static bool TryReconcile(Declaration existing, Declaration newDeclaration)
     {
         if (existing is ForwardDeclaration forward && newDeclaration is StructDeclaration)

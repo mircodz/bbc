@@ -14,6 +14,8 @@ namespace Bond.Parser.CLI;
 
 public static class Program
 {
+    private static readonly JsonSerializerOptions PrettyJson = new() { WriteIndented = true };
+
     static async Task<int> Main(string[] args)
     {
         if (args.Length == 0 || args.Contains("--help") || args.Contains("-h"))
@@ -22,70 +24,40 @@ public static class Program
             return args.Length == 0 ? 1 : 0;
         }
 
-        var command = args[0].ToLower();
+        var command = args[0].ToLowerInvariant();
+        var rest = args[1..];
 
         return command switch
         {
-            "breaking" => await RunBreakingCommand(args[1..]),
-            "parse" => await RunParseCommand(args[1..]),
-            "fmt" => await RunFormatCommand(args[1..]),
-            "format" => await RunFormatCommand(args[1..]),
-            _ => await RunParseCommand(args) // Default to parse for backward compatibility
+            "breaking" => await RunBreakingCommand(rest),
+            "parse" => await RunParseCommand(rest),
+            "fmt" or "format" => await RunFormatCommand(rest),
+            _ => UnknownCommand(command)
         };
     }
 
-    static void ShowHelp()
+    static int UnknownCommand(string command)
     {
-        Console.WriteLine("Bond Schema Compiler - Parses and validates Bond IDL files");
-        Console.WriteLine();
-        Console.WriteLine("Usage:");
-        Console.WriteLine("  bbc parse <file.bond> [options]");
-        Console.WriteLine("  bbc breaking <file.bond> --against <reference> [options]");
-        Console.WriteLine();
-        Console.WriteLine("Commands:");
-        Console.WriteLine("  parse       Parse and validate a Bond schema file");
-        Console.WriteLine("  breaking    Check for breaking changes against a reference schema");
-        Console.WriteLine("  format      Format a Bond schema file");
-        Console.WriteLine();
-        Console.WriteLine("Parse Options:");
-        Console.WriteLine("  -v, --verbose              Show detailed AST output");
-        Console.WriteLine("  --json                     Output AST as JSON (Bond schema format)");
-        Console.WriteLine("  --ignore-imports           Parse without resolving imports or types");
-        Console.WriteLine();
-        Console.WriteLine("Breaking Options:");
-        Console.WriteLine("  --against <reference>      Reference schema to compare against (file path or .git#branch=name)");
-        Console.WriteLine("  --error-format <format>    Output format: text, json (default: text)");
-        Console.WriteLine("  --ignore-imports           Compare without resolving imports or types");
-        Console.WriteLine();
-        Console.WriteLine("Format Options:");
-        Console.WriteLine("  --check                    Exit non-zero if formatting is needed");
-        Console.WriteLine();
-        Console.WriteLine("Examples:");
-        Console.WriteLine("  bbc parse schema.bond");
-        Console.WriteLine("  bbc breaking schema.bond --against schema_v1.bond");
-        Console.WriteLine("  bbc breaking schema.bond --against .git#branch=main --error-format=json");
-        Console.WriteLine("  bbc format schema.bond");
-        Console.WriteLine();
-        Console.WriteLine("Global Options:");
-        Console.WriteLine("  -h, --help                 Show this help message");
+        WriteError($"Error: unknown command '{command}'. Run with --help to see available commands.");
+        return 1;
     }
 
     static async Task<int> RunParseCommand(string[] args)
     {
-        if (args.Length == 0)
+        var parsed = new Args(args);
+        var filePath = parsed.PositionalOrNull;
+        if (filePath is null)
         {
             WriteError("Error: No file specified");
             ShowHelp();
             return 1;
         }
 
-        var filePath = args[0];
-        var verbose = args.Contains("--verbose") || args.Contains("-v");
-        var jsonOutput = args.Contains("--json");
-        var ignoreImports = args.Contains("--ignore-imports");
+        var verbose = parsed.HasFlag("-v", "--verbose");
+        var jsonOutput = parsed.HasFlag("--json");
+        var ignoreImports = parsed.HasFlag("--ignore-imports");
 
-        var parseOptions = new ParseOptions(IgnoreImports: ignoreImports);
-        var result = await ParserFacade.ParseFileAsync(filePath, options: parseOptions);
+        var result = await ParserFacade.ParseFileAsync(filePath, options: new ParseOptions(IgnoreImports: ignoreImports));
 
         if (!result.Success)
         {
@@ -93,7 +65,7 @@ public static class Program
             foreach (var error in result.Errors)
             {
                 Console.Error.WriteLine($"{error.Line}:{error.Column}: {error.Message}");
-                if (error.FilePath != null)
+                if (error.FilePath is not null)
                 {
                     Console.Error.WriteLine($"  in {error.FilePath}");
                 }
@@ -101,16 +73,10 @@ public static class Program
             return 1;
         }
 
-        if (result.Ast != null)
+        if (result.Ast is not null)
         {
-            if (jsonOutput)
-            {
-                PrintJson(result.Ast);
-            }
-            else
-            {
-                PrintSummary(result.Ast, filePath, verbose);
-            }
+            if (jsonOutput) PrintJson(result.Ast);
+            else PrintSummary(result.Ast, filePath, verbose);
         }
 
         return 0;
@@ -118,43 +84,29 @@ public static class Program
 
     static async Task<int> RunBreakingCommand(string[] args)
     {
-        if (args.Length == 0)
+        var parsed = new Args(args);
+        var filePath = parsed.PositionalOrNull;
+        if (filePath is null)
         {
             WriteError("Error: No file specified");
             ShowHelp();
             return 1;
         }
 
-        var filePath = args[0];
-        var againstIndex = Array.FindIndex(args, a => a == "--against");
-        var formatIndex = Array.FindIndex(args, a => a.StartsWith("--error-format"));
-        var verbose = args.Contains("-v") || args.Contains("--verbose");
-        var ignoreImports = args.Contains("--ignore-imports");
-
-        if (againstIndex < 0 || againstIndex + 1 >= args.Length)
+        var against = parsed.GetValue("--against");
+        if (against is null)
         {
             WriteError("Error: --against flag is required for breaking command");
             ShowHelp();
             return 1;
         }
 
-        var against = args[againstIndex + 1];
-        var errorFormat = "text";
-
-        if (formatIndex >= 0)
-        {
-            if (args[formatIndex].Contains('='))
-            {
-                errorFormat = args[formatIndex].Split('=')[1];
-            }
-            else if (formatIndex + 1 < args.Length)
-            {
-                errorFormat = args[formatIndex + 1];
-            }
-        }
+        var errorFormat = parsed.GetValue("--error-format") ?? "text";
+        var verbose = parsed.HasFlag("-v", "--verbose");
+        var ignoreImports = parsed.HasFlag("--ignore-imports");
 
         var reference = await ResolveReference(against, filePath);
-        if (reference == null)
+        if (reference is null)
         {
             WriteError($"Error: Could not resolve reference: {against}");
             return 1;
@@ -165,15 +117,16 @@ public static class Program
 
     static async Task<int> RunFormatCommand(string[] args)
     {
-        if (args.Length == 0)
+        var parsed = new Args(args);
+        var filePath = parsed.PositionalOrNull;
+        if (filePath is null)
         {
             WriteError("Error: No file specified");
             ShowHelp();
             return 1;
         }
 
-        var filePath = args[0];
-        var check = args.Contains("--check");
+        var check = parsed.HasFlag("--check");
 
         if (!File.Exists(filePath))
         {
@@ -190,7 +143,7 @@ public static class Program
             foreach (var error in result.Errors)
             {
                 Console.Error.WriteLine($"{error.Line}:{error.Column}: {error.Message}");
-                if (error.FilePath != null)
+                if (error.FilePath is not null)
                 {
                     Console.Error.WriteLine($"  in {error.FilePath}");
                 }
@@ -198,7 +151,7 @@ public static class Program
             return 1;
         }
 
-        if (result.FormattedText == null)
+        if (result.FormattedText is null)
         {
             WriteError("Error: Format produced no output");
             return 1;
@@ -229,7 +182,7 @@ public static class Program
 
     static async Task<ResolvedReference?> ResolveReference(string reference, string currentFilePath)
     {
-        if (reference.StartsWith(".git#"))
+        if (reference.StartsWith(".git#", StringComparison.Ordinal))
         {
             return await ResolveGitReference(reference, currentFilePath);
         }
@@ -261,10 +214,7 @@ public static class Program
         try
         {
             var gitRoot = await RunGitCommand("rev-parse --show-toplevel");
-            if (gitRoot == null)
-            {
-                return null;
-            }
+            if (gitRoot is null) return null;
 
             var fullPath = Path.GetFullPath(currentFilePath);
             var gitRelativePath = Path.GetRelativePath(gitRoot, fullPath).Replace('\\', '/');
@@ -274,24 +224,22 @@ public static class Program
             }
 
             var content = await RunGitCommand($"show {refName}:{gitRelativePath}", gitRoot);
-            if (content == null)
-            {
-                return null;
-            }
+            if (content is null) return null;
 
             var virtualPath = Path.GetFullPath(Path.Combine(gitRoot, gitRelativePath));
             var importResolver = CreateGitAwareImportResolver(gitRoot, refName);
             return new ResolvedReference(virtualPath, content, importResolver);
         }
-        catch
+        catch (Exception ex)
         {
+            WriteError($"Error: failed to resolve git reference '{gitRef}': {ex.Message}");
             return null;
         }
     }
 
     static async Task<string?> RunGitCommand(string arguments, string? workingDirectory = null)
     {
-        var process = new System.Diagnostics.Process
+        using var process = new System.Diagnostics.Process
         {
             StartInfo = new System.Diagnostics.ProcessStartInfo
             {
@@ -306,17 +254,30 @@ public static class Program
         };
 
         process.Start();
-        var output = await process.StandardOutput.ReadToEndAsync();
+        // Read both streams concurrently to avoid deadlock if git fills its stderr buffer.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
+        var output = await stdoutTask;
+        var stderr = await stderrTask;
 
-        return process.ExitCode == 0 ? output.Trim() : null;
+        if (process.ExitCode != 0)
+        {
+            if (!string.IsNullOrWhiteSpace(stderr))
+            {
+                WriteError($"git {arguments}: {stderr.Trim()}");
+            }
+            return null;
+        }
+
+        return output.Trim();
     }
 
     static async Task<int> CheckBreaking(ResolvedReference oldSchema, string newFilePath, string errorFormat, bool verbose, bool ignoreImports)
     {
         var parseOptions = new ParseOptions(IgnoreImports: ignoreImports);
         ParseResult oldResult;
-        if (oldSchema.Content != null)
+        if (oldSchema.Content is not null)
         {
             oldResult = await ParserFacade.ParseContentAsync(
                 oldSchema.Content,
@@ -345,17 +306,17 @@ public static class Program
 
         var checker = new CompatibilityChecker();
         var changes = checker.CheckCompatibility(oldResult.Ast!, newResult.Ast!);
-        var breaking = changes.Where(c => c.Category is ChangeCategory.BreakingWire or ChangeCategory.BreakingText).ToList();
+        var hasBreaking = changes.Any(c => c.Category is ChangeCategory.BreakingWire or ChangeCategory.BreakingText);
 
         if (errorFormat == "json")
         {
-            OutputJsonBreaking(changes, breaking.Any());
-            return breaking.Any() ? 1 : 0;
+            OutputJsonBreaking(changes);
+            return hasBreaking ? 1 : 0;
         }
 
-        if (breaking.Any())
+        if (hasBreaking)
         {
-            foreach (var change in breaking)
+            foreach (var change in changes.Where(c => c.Category is ChangeCategory.BreakingWire or ChangeCategory.BreakingText))
             {
                 Console.Error.WriteLine($"{change.Location}: {change.Description}");
             }
@@ -372,8 +333,12 @@ public static class Program
         return 0;
     }
 
+    // git's object database is content-addressed and won't change for a given (ref, path)
+    // during one CLI invocation; cache to avoid one process spawn per imported file.
     static ImportResolver CreateGitAwareImportResolver(string gitRoot, string refName)
     {
+        var cache = new Dictionary<string, string?>(StringComparer.Ordinal);
+
         return async (currentFile, importPath) =>
         {
             var currentDir = Path.GetDirectoryName(currentFile) ?? gitRoot;
@@ -383,10 +348,14 @@ public static class Program
             var inRepo = !relativePath.StartsWith("..") && !Path.IsPathRooted(relativePath);
             if (inRepo)
             {
-                var contentFromGit = await RunGitCommand($"show {refName}:{relativePath}", gitRoot);
-                if (contentFromGit != null)
+                if (!cache.TryGetValue(relativePath, out var cached))
                 {
-                    return (absolutePath, contentFromGit);
+                    cached = await RunGitCommand($"show {refName}:{relativePath}", gitRoot);
+                    cache[relativePath] = cached;
+                }
+                if (cached is not null)
+                {
+                    return (absolutePath, cached);
                 }
             }
 
@@ -417,20 +386,24 @@ public static class Program
         return 1;
     }
 
+    // Suppress ANSI color sequences when stderr is redirected so they don't leak into pipes / log files.
     static void WriteError(string message)
     {
-        Console.ForegroundColor = ConsoleColor.Red;
+        if (!Console.IsErrorRedirected)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+        }
         Console.Error.WriteLine(message);
-        Console.ResetColor();
+        if (!Console.IsErrorRedirected)
+        {
+            Console.ResetColor();
+        }
     }
 
-    static void OutputJson(object output)
-    {
-        Console.WriteLine(JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
-    }
+    static void OutputJson(object output) =>
+        Console.WriteLine(JsonSerializer.Serialize(output, PrettyJson));
 
-    static void OutputJsonErrors(string errorType, IReadOnlyList<ParseError> errors, string message)
-    {
+    static void OutputJsonErrors(string errorType, IReadOnlyList<ParseError> errors, string message) =>
         OutputJson(new
         {
             error = errorType,
@@ -443,9 +416,8 @@ public static class Program
                 file = e.FilePath
             })
         });
-    }
 
-    static void OutputJsonBreaking(List<SchemaChange> changes, bool hasBreaking)
+    static void OutputJsonBreaking(List<SchemaChange> changes)
     {
         static string CategoryToString(ChangeCategory cat) => cat switch
         {
@@ -468,8 +440,7 @@ public static class Program
 
     static void PrintJson(Bond.Parser.Syntax.Bond ast)
     {
-        var options = BondJsonSerializerOptions.GetOptions();
-        var json = JsonSerializer.Serialize(ast, options);
+        var json = JsonSerializer.Serialize(ast, BondJsonSerializerOptions.GetOptions());
         Console.WriteLine(json);
     }
 
@@ -489,7 +460,7 @@ public static class Program
 
         foreach (var decl in ast.Declarations)
         {
-            Console.WriteLine($"{decl.Kind.ToLower()} {decl.Name}");
+            Console.WriteLine($"{decl.Kind.ToLowerInvariant()} {decl.Name}");
 
             if (verbose)
             {
@@ -526,6 +497,95 @@ public static class Program
             case Syntax.AliasDeclaration aliasDecl:
                 Console.WriteLine($"  = {aliasDecl.AliasedType}");
                 break;
+        }
+    }
+
+    static void ShowHelp()
+    {
+        Console.WriteLine("Bond Schema Compiler - Parses and validates Bond IDL files");
+        Console.WriteLine();
+        Console.WriteLine("Usage:");
+        Console.WriteLine("  bbc parse <file.bond> [options]");
+        Console.WriteLine("  bbc breaking <file.bond> --against <reference> [options]");
+        Console.WriteLine("  bbc format <file.bond> [options]   (alias: bbc fmt)");
+        Console.WriteLine();
+        Console.WriteLine("Commands:");
+        Console.WriteLine("  parse       Parse and validate a Bond schema file");
+        Console.WriteLine("  breaking    Check for breaking changes against a reference schema");
+        Console.WriteLine("  format      Format a Bond schema file (alias: fmt)");
+        Console.WriteLine();
+        Console.WriteLine("Parse Options:");
+        Console.WriteLine("  -v, --verbose              Show detailed AST output");
+        Console.WriteLine("  --json                     Output AST as JSON (Bond schema format)");
+        Console.WriteLine("  --ignore-imports           Parse without resolving imports or types");
+        Console.WriteLine();
+        Console.WriteLine("Breaking Options:");
+        Console.WriteLine("  --against <reference>      Reference schema to compare against (file path or .git#branch=name)");
+        Console.WriteLine("  --error-format <format>    Output format: text, json (default: text)");
+        Console.WriteLine("  --ignore-imports           Compare without resolving imports or types");
+        Console.WriteLine();
+        Console.WriteLine("Format Options:");
+        Console.WriteLine("  --check                    Exit non-zero if formatting is needed");
+        Console.WriteLine();
+        Console.WriteLine("Examples:");
+        Console.WriteLine("  bbc parse schema.bond");
+        Console.WriteLine("  bbc breaking schema.bond --against schema_v1.bond");
+        Console.WriteLine("  bbc breaking schema.bond --against .git#branch=main --error-format=json");
+        Console.WriteLine("  bbc format schema.bond");
+        Console.WriteLine();
+        Console.WriteLine("Global Options:");
+        Console.WriteLine("  -h, --help                 Show this help message");
+    }
+
+    /// <summary>
+    /// Tiny argument helper. The first non-flag arg is the positional (file path);
+    /// flags are matched by exact name; values support both `--flag value` and `--flag=value`.
+    /// </summary>
+    private sealed class Args
+    {
+        private readonly string[] _args;
+
+        public Args(string[] args) { _args = args; }
+
+        public string? PositionalOrNull
+        {
+            get
+            {
+                for (var i = 0; i < _args.Length; i++)
+                {
+                    if (!_args[i].StartsWith('-')) return _args[i];
+                }
+                return null;
+            }
+        }
+
+        public bool HasFlag(params string[] names)
+        {
+            foreach (var arg in _args)
+            {
+                foreach (var name in names)
+                {
+                    if (arg == name) return true;
+                }
+            }
+            return false;
+        }
+
+        public string? GetValue(string name)
+        {
+            for (var i = 0; i < _args.Length; i++)
+            {
+                if (_args[i] == name && i + 1 < _args.Length)
+                {
+                    return _args[i + 1];
+                }
+                var prefix = name + "=";
+                if (_args[i].StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    return _args[i][prefix.Length..];
+                }
+            }
+            return null;
         }
     }
 }

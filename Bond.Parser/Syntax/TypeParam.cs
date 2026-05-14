@@ -1,17 +1,11 @@
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Constraint on a type parameter
-/// </summary>
 public enum TypeConstraint
 {
     None,
-    Value  // Restricts to value types (primitives)
+    Value  // primitives only
 }
 
-/// <summary>
-/// Represents a generic type parameter
-/// </summary>
 public record TypeParam(
     string Name,
     TypeConstraint Constraint = TypeConstraint.None

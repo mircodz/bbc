@@ -2,9 +2,6 @@ using System.Numerics;
 
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Represents default values for struct fields
-/// </summary>
 public abstract record Default
 {
     private Default() { }

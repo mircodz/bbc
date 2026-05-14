@@ -18,9 +18,6 @@ public static class Extensions
         [typeof(ulong)]  = (0,               ulong.MaxValue),
     };
 
-    /// <summary>
-    /// Checks if a BigInteger value is within the bounds of a specific integral type.
-    /// </summary>
     public static bool IsInBounds<T>(this BigInteger value) where T : struct =>
         Bounds.TryGetValue(typeof(T), out var b) && value >= b.Min && value <= b.Max;
 }

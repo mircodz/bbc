@@ -2,9 +2,6 @@ using System.Linq;
 
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Represents a forward declaration of a struct
-/// </summary>
 public sealed record ForwardDeclaration : Declaration
 {
     public override string Kind => "forward declaration";

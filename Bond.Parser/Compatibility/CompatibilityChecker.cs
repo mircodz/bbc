@@ -5,14 +5,8 @@ using Bond.Parser.Syntax;
 
 namespace Bond.Parser.Compatibility;
 
-/// <summary>
-/// Checks compatibility between two Bond schemas to detect breaking changes
-/// </summary>
 public class CompatibilityChecker
 {
-    /// <summary>
-    /// Checks compatibility between old and new schemas
-    /// </summary>
     public List<SchemaChange> CheckCompatibility(Syntax.Bond oldSchema, Syntax.Bond newSchema)
     {
         var changes = new List<SchemaChange>();
@@ -79,6 +73,13 @@ public class CompatibilityChecker
             case (AliasDeclaration oldAlias, AliasDeclaration newAlias):
                 CompareAliases(oldAlias, newAlias, changes);
                 break;
+            case (ForwardDeclaration, ForwardDeclaration):
+                // Forwards carry only Name + TypeParameters, both already checked by
+                // QualifiedName matching and the declaration-kind check above.
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"CompareDeclarations: unhandled declaration kind '{oldDecl.Kind}' (type {oldDecl.GetType().Name})");
         }
     }
 
@@ -199,9 +200,8 @@ public class CompatibilityChecker
     {
         var location = $"enum {oldEnum.Name}";
 
-        // Compute effective integer values, resolving implicit (auto-incremented) constants.
-        // The rule from Bond's schema evolution docs: adding constants that don't alter the
-        // effective integer value of any existing constant is safe; anything else is breaking.
+        // Bond rule: adding constants is safe iff they don't shift any existing
+        // constant's effective integer value.
         var oldEffective = EffectiveValues(oldEnum.Constants);
         var newEffective = EffectiveValues(newEnum.Constants);
 
@@ -228,8 +228,7 @@ public class CompatibilityChecker
         {
             if (!oldByName.ContainsKey(name))
             {
-                // A new constant whose effective integer value collides with an existing
-                // constant causes non-deterministic round-tripping (same integer → two names).
+                // Same integer mapping to two names breaks round-tripping.
                 var colliding = oldByName
                     .Where(kv => kv.Value == newValue)
                     .Select(kv => kv.Key)
@@ -248,16 +247,36 @@ public class CompatibilityChecker
             }
         }
 
+        // Attribute downward shifts to preceding removals when the math lines up: if a
+        // constant shifted down by N and exactly N removed constants used to sit at lower
+        // ordinals, the removals explain the shift. Per-constant signals stay (a user may
+        // care about a specific name) but the recommendation now names the root cause.
+        var removedBeforeByValue = oldByName
+            .Where(kv => !newByName.ContainsKey(kv.Key))
+            .OrderBy(kv => kv.Value)
+            .ToList();
+
         foreach (var (name, oldValue) in oldByName)
         {
-            if (newByName.TryGetValue(name, out var newValue) && oldValue != newValue)
+            if (!newByName.TryGetValue(name, out var newValue) || oldValue == newValue) continue;
+
+            var delta = oldValue - newValue;
+            var precedingRemovals = removedBeforeByValue
+                .Where(r => r.Value < oldValue)
+                .Select(r => r.Key)
+                .ToList();
+
+            var description = $"Enum constant '{name}' value changed from {oldValue} to {newValue}";
+            if (delta > 0 && precedingRemovals.Count == delta)
             {
-                changes.Add(new SchemaChange(
-                    ChangeCategory.BreakingWire,
-                    $"Enum constant '{name}' value changed from {oldValue} to {newValue}",
-                    $"{location}.{name}",
-                    "Changing enum constant values breaks compatibility"));
+                description += $" (caused by removal of {string.Join(", ", precedingRemovals.Select(r => $"'{r}'"))})";
             }
+
+            changes.Add(new SchemaChange(
+                ChangeCategory.BreakingWire,
+                description,
+                $"{location}.{name}",
+                "Changing enum constant values breaks compatibility"));
         }
     }
 
@@ -317,17 +336,56 @@ public class CompatibilityChecker
         {
             if (newMethods.TryGetValue(name, out var newMethod))
             {
-                if (oldMethod.ToString() != newMethod.ToString())
-                {
-                    changes.Add(new SchemaChange(
-                        ChangeCategory.BreakingWire,
-                        $"Method signature changed",
-                        $"{location}.{name}",
-                        $"Old: {oldMethod}\nNew: {newMethod}"));
-                }
+                CompareMethods(location, oldMethod, newMethod, changes);
             }
         }
     }
+
+    private void CompareMethods(string serviceLocation, Method oldMethod, Method newMethod, List<SchemaChange> changes)
+    {
+        var location = $"{serviceLocation}.{oldMethod.Name}";
+
+        if (oldMethod.GetType() != newMethod.GetType())
+        {
+            changes.Add(new SchemaChange(
+                ChangeCategory.BreakingWire,
+                $"Method '{oldMethod.Name}' kind changed from {MethodKindName(oldMethod)} to {MethodKindName(newMethod)}",
+                location));
+            return;
+        }
+
+        var oldInput = MethodInput(oldMethod);
+        var newInput = MethodInput(newMethod);
+        if (oldInput != newInput)
+        {
+            changes.Add(new SchemaChange(
+                ChangeCategory.BreakingWire,
+                $"Method '{oldMethod.Name}' input changed from {oldInput} to {newInput}",
+                location));
+        }
+
+        if (oldMethod is FunctionMethod fOld && newMethod is FunctionMethod fNew && fOld.ResultType != fNew.ResultType)
+        {
+            changes.Add(new SchemaChange(
+                ChangeCategory.BreakingWire,
+                $"Method '{oldMethod.Name}' result changed from {fOld.ResultType} to {fNew.ResultType}",
+                location));
+        }
+    }
+
+    private static MethodType MethodInput(Method method) => method switch
+    {
+        FunctionMethod f => f.InputType,
+        EventMethod e => e.InputType,
+        _ => MethodType.Void.Instance
+    };
+
+    private static string MethodKindName(Method method) => method switch
+    {
+        FunctionMethod => "function",
+        EventMethod => "event",
+        _ => "unknown"
+    };
 
     private void CompareAliases(AliasDeclaration oldAlias, AliasDeclaration newAlias, List<SchemaChange> changes)
     {
@@ -342,16 +400,16 @@ public class CompatibilityChecker
         }
     }
 
+    // optional ↔ required directly is breaking; transitions through required_optional
+    // are safe with careful rollout.
     private static ChangeCategory ClassifyModifierChange(FieldModifier oldMod, FieldModifier newMod)
     {
-        // Direct optional <-> required is breaking
         if ((oldMod == FieldModifier.Optional && newMod == FieldModifier.Required) ||
             (oldMod == FieldModifier.Required && newMod == FieldModifier.Optional))
         {
             return ChangeCategory.BreakingWire;
         }
 
-        // Two-step changes via required_optional are safe but need careful rollout
         return ChangeCategory.Compatible;
     }
 
@@ -368,6 +426,10 @@ public class CompatibilityChecker
 
     private static (ChangeCategory Category, string? Recommendation) ClassifyTypeChange(BondType oldType, BondType newType)
     {
+        // Recursion base case: structural equality (e.g. unchanged map key when only the
+        // value type differs).
+        if (oldType == newType) return (ChangeCategory.Compatible, null);
+
         if (IsInt32ToEnumChange(oldType, newType) || IsInt32ToEnumChange(newType, oldType))
             return (ChangeCategory.Compatible, null);
 
@@ -380,19 +442,62 @@ public class CompatibilityChecker
         if (IsBondedChange(oldType, newType))
             return (ChangeCategory.Compatible, null);
 
-        // Numeric promotions (require careful rollout — consumers must update first)
         if (IsNumericPromotion(oldType, newType))
             return (ChangeCategory.Compatible, "Deploy to consumers before producers when promoting numeric types");
 
         if (IsIntToEnumPromotion(oldType, newType))
             return (ChangeCategory.Compatible, "Deploy to consumers before producers when promoting int8/int16 to enum");
 
+        // Same container shape: classify the inner change(s). Lets `map<string, int8>` →
+        // `map<string, int16>` be recognized as a numeric-promotion-of-the-value-type
+        // instead of an opaque BreakingWire.
+        var inner = ClassifyContainerChange(oldType, newType);
+        if (inner is { } result) return result;
+
         return (ChangeCategory.BreakingWire, "This type change is not compatible");
     }
 
+    private static (ChangeCategory Category, string? Recommendation)? ClassifyContainerChange(BondType oldType, BondType newType) =>
+        (oldType, newType) switch
+        {
+            (BondType.List a,     BondType.List b)     => ClassifyTypeChange(a.ElementType, b.ElementType),
+            (BondType.Vector a,   BondType.Vector b)   => ClassifyTypeChange(a.ElementType, b.ElementType),
+            (BondType.Set a,      BondType.Set b)      => ClassifyTypeChange(a.KeyType,     b.KeyType),
+            (BondType.Nullable a, BondType.Nullable b) => ClassifyTypeChange(a.ElementType, b.ElementType),
+            (BondType.Maybe a,    BondType.Maybe b)    => ClassifyTypeChange(a.ElementType, b.ElementType),
+            (BondType.Bonded a,   BondType.Bonded b)   => ClassifyTypeChange(a.StructType,  b.StructType),
+            (BondType.Map a,      BondType.Map b)      => CombineChanges(
+                ClassifyTypeChange(a.KeyType,   b.KeyType),
+                ClassifyTypeChange(a.ValueType, b.ValueType)),
+            _ => null
+        };
+
+    // For map<K, V> we may have independent changes to K and V. The combined verdict is
+    // the more-breaking of the two; the recommendation falls back to whichever side has
+    // one (typically the compatible-with-rollout-note side).
+    private static (ChangeCategory Category, string? Recommendation) CombineChanges(
+        (ChangeCategory Category, string? Recommendation) key,
+        (ChangeCategory Category, string? Recommendation) value)
+    {
+        var category = MoreSevere(key.Category, value.Category);
+        var recommendation = key.Recommendation ?? value.Recommendation;
+        return (category, recommendation);
+    }
+
+    private static ChangeCategory MoreSevere(ChangeCategory a, ChangeCategory b) =>
+        Severity(a) >= Severity(b) ? a : b;
+
+    private static int Severity(ChangeCategory category) => category switch
+    {
+        ChangeCategory.Compatible   => 0,
+        ChangeCategory.BreakingText => 1,
+        ChangeCategory.BreakingWire => 2,
+        _ => 0
+    };
+
     private static bool IsInt32ToEnumChange(BondType type1, BondType type2) =>
         type1 is BondType.Int32 &&
-        type2 is BondType.UserDefined { Declaration: EnumDeclaration };
+        type2 is BondType.TypeReference { Declaration: EnumDeclaration };
 
     private static bool IsVectorListChange(BondType type1, BondType type2) =>
         (type1, type2) switch
@@ -442,5 +547,5 @@ public class CompatibilityChecker
 
     private static bool IsIntToEnumPromotion(BondType oldType, BondType newType) =>
         oldType is BondType.Int8 or BondType.Int16 &&
-        newType is BondType.UserDefined { Declaration: EnumDeclaration };
+        newType is BondType.TypeReference { Declaration: EnumDeclaration };
 }

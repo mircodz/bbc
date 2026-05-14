@@ -1,8 +1,5 @@
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Field modifier for struct fields
-/// </summary>
 public enum FieldModifier
 {
     Optional,
@@ -10,9 +7,6 @@ public enum FieldModifier
     RequiredOptional
 }
 
-/// <summary>
-/// Represents a field in a struct
-/// </summary>
 public record Field(
     Attribute[] Attributes,
     ushort Ordinal,

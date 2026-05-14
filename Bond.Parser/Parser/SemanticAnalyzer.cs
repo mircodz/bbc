@@ -13,7 +13,7 @@ namespace Bond.Parser.Parser;
 ///   1. Process imports recursively, populating the shared SymbolTable.
 ///   2. Register this file's declarations (structs/enums/services to the table,
 ///      aliases to a per-file list).
-///   3. Resolve every UnresolvedUserType reference to a UserDefined wrapper.
+///   3. Resolve every UnresolvedType reference to a TypeReference wrapper.
 ///   4. Validate the resolved AST.
 /// Validation operates on the resolved AST so checks are pure pattern matches —
 /// no side trips to the symbol table.
@@ -205,13 +205,10 @@ public class SemanticAnalyzer
     private static BondType UnwrapMaybe(BondType type) =>
         type is BondType.Maybe maybe ? maybe.ElementType : type;
 
-    /// <summary>
-    /// Walks chains of resolved aliases (`UserDefined { Declaration: AliasDeclaration }`)
-    /// down to the underlying concrete type. Validation works on the unwrapped form so
-    /// `using Latency = int32` and `int32` behave identically.
-    /// </summary>
+    // Validation works on the unwrapped form so `using Latency = int32` and
+    // `int32` behave identically.
     private static BondType UnwrapAlias(BondType type) =>
-        type is BondType.UserDefined { Declaration: AliasDeclaration alias }
+        type is BondType.TypeReference { Declaration: AliasDeclaration alias }
             ? UnwrapAlias(alias.AliasedType)
             : type;
 }

@@ -10,7 +10,6 @@ internal sealed class BondTypeJsonConverter : WriteOnlyJsonConverter<BondType>
     {
         switch (value)
         {
-            // Primitive types - serialize as strings
             case BondType.Int8:
                 writer.WriteStringValue("int8");
                 break;
@@ -60,7 +59,6 @@ internal sealed class BondTypeJsonConverter : WriteOnlyJsonConverter<BondType>
                 writer.WriteStringValue("bond_meta::full_name");
                 break;
 
-            // Container types - serialize as objects
             case BondType.List list:
                 writer.WriteStartObject();
                 writer.WriteString("type", "list");
@@ -119,16 +117,15 @@ internal sealed class BondTypeJsonConverter : WriteOnlyJsonConverter<BondType>
                 writer.WriteEndObject();
                 break;
 
-            // User-defined types
-            case BondType.UserDefined userDefined:
+            case BondType.TypeReference typeReference:
                 writer.WriteStartObject();
                 writer.WriteString("type", "user");
                 writer.WritePropertyName("declaration");
-                JsonSerializer.Serialize(writer, userDefined.Declaration, options);
-                if (userDefined.TypeArguments.Length > 0)
+                JsonSerializer.Serialize(writer, typeReference.Declaration, options);
+                if (typeReference.TypeArguments.Length > 0)
                 {
                     writer.WritePropertyName("arguments");
-                    JsonSerializer.Serialize(writer, userDefined.TypeArguments, options);
+                    JsonSerializer.Serialize(writer, typeReference.TypeArguments, options);
                 }
                 writer.WriteEndObject();
                 break;
@@ -149,9 +146,8 @@ internal sealed class BondTypeJsonConverter : WriteOnlyJsonConverter<BondType>
                 writer.WriteEndObject();
                 break;
 
-            case BondType.UnresolvedUserType unresolvedType:
-                // This should not occur after semantic analysis, but handle it gracefully
-                throw new JsonException($"Cannot serialize unresolved user type: {string.Join(".", unresolvedType.QualifiedName)}. The schema must pass semantic analysis before JSON serialization.");
+            case BondType.UnresolvedType unresolvedType:
+                throw new JsonException($"Cannot serialize unresolved type '{string.Join(".", unresolvedType.QualifiedName)}' — schema must pass semantic analysis first.");
 
             default:
                 throw new JsonException($"Unknown BondType: {value.GetType().Name}");

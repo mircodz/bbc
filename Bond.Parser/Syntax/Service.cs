@@ -2,9 +2,6 @@ using System.Linq;
 
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Represents a service declaration
-/// </summary>
 public sealed record ServiceDeclaration : Declaration
 {
     public required Attribute[] Attributes { get; init; }

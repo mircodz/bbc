@@ -1,8 +1,6 @@
 namespace Bond.Parser.Syntax;
 
-/// <summary>
-/// Root AST node representing a parsed Bond file
-/// </summary>
+/// <summary>Root AST node for a parsed Bond file.</summary>
 public record Bond(
     Import[] Imports,
     Namespace[] Namespaces,

@@ -1,8 +1,5 @@
 namespace Bond.Parser.Compatibility;
 
-/// <summary>
-/// Categorizes schema changes by their compatibility impact
-/// </summary>
 public enum ChangeCategory
 {
     /// <summary>
@@ -26,9 +23,6 @@ public enum ChangeCategory
     BreakingText,
 }
 
-/// <summary>
-/// Represents a single schema change detected during compatibility checking
-/// </summary>
 public record SchemaChange(
     ChangeCategory Category,
     string Description,
