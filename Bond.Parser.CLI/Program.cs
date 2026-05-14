@@ -503,9 +503,9 @@ public static class Program
         Console.WriteLine("Bond Schema Compiler - Parses and validates Bond IDL files");
         Console.WriteLine();
         Console.WriteLine("Usage:");
-        Console.WriteLine("  bbc parse <file.bond> [options]");
-        Console.WriteLine("  bbc breaking <file.bond> --against <reference> [options]");
-        Console.WriteLine("  bbc format <file.bond> [options]   (alias: bbc fmt)");
+        Console.WriteLine("  bondx parse <file.bond> [options]");
+        Console.WriteLine("  bondx breaking <file.bond> --against <reference> [options]");
+        Console.WriteLine("  bondx format <file.bond> [options]   (alias: bondx fmt)");
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  parse       Parse and validate a Bond schema file");
@@ -526,10 +526,10 @@ public static class Program
         Console.WriteLine("  --check                    Exit non-zero if formatting is needed");
         Console.WriteLine();
         Console.WriteLine("Examples:");
-        Console.WriteLine("  bbc parse schema.bond");
-        Console.WriteLine("  bbc breaking schema.bond --against schema_v1.bond");
-        Console.WriteLine("  bbc breaking schema.bond --against .git#branch=main --error-format=json");
-        Console.WriteLine("  bbc format schema.bond");
+        Console.WriteLine("  bondx parse schema.bond");
+        Console.WriteLine("  bondx breaking schema.bond --against schema_v1.bond");
+        Console.WriteLine("  bondx breaking schema.bond --against .git#branch=main --error-format=json");
+        Console.WriteLine("  bondx format schema.bond");
         Console.WriteLine();
         Console.WriteLine("Global Options:");
         Console.WriteLine("  -h, --help                 Show this help message");

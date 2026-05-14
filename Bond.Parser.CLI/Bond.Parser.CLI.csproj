@@ -15,8 +15,8 @@
 
     <!-- Tool configuration -->
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>bbc</ToolCommandName>
-    <PackageId>bbc</PackageId>
+    <ToolCommandName>bondx</ToolCommandName>
+    <PackageId>bondx</PackageId>
     <Authors>Mirco De Zorzi</Authors>
     <Description>Bond IDL compiler and toolchain</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
