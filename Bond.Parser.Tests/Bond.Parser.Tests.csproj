@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Bond.Parser\Bond.Parser.csproj" />
+    <ProjectReference Include="..\Bond.Fuzzer\Bond.Fuzzer.csproj" />
   </ItemGroup>
 
   <!-- Copy schema fixtures into test output -->
