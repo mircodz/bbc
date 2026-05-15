@@ -1,11 +1,13 @@
 # Bond
 
-A .NET implementation of the Bond IDL compiler and toolchain.
+<div align="center">
+    <img src="https://count.getloli.com/get/@mircodz-bond-tools?theme=asoul&padding=3" /><br>
+</div>
 
 ## Quick Start
 
 ```bash
-make install
+dotnet tool install -g bond-tools
 ```
 
 Once installed, use the `bond` command:
