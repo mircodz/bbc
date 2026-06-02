@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Antlr4.Runtime;
 using Bond.Parser.Grammar;
 using Bond.Parser.Syntax;
 
@@ -12,6 +13,86 @@ public class AstBuilder : BondBaseVisitor<object?>
 {
     private readonly List<Namespace> _currentNamespaces = [];
     private readonly List<TypeParam> _currentTypeParams = [];
+
+    /// <summary>Token stream used to recover comments from the hidden channel; null disables trivia.</summary>
+    private readonly BufferedTokenStream? _tokens;
+
+    public AstBuilder()
+    {
+    }
+
+    public AstBuilder(BufferedTokenStream tokens)
+    {
+        _tokens = tokens;
+    }
+
+    /// <summary>Comments on the hidden channel immediately before <paramref name="start"/>.</summary>
+    private Trivia[] LeadingTriviaFor(IToken start)
+    {
+        var hidden = _tokens?.GetHiddenTokensToLeft(start.TokenIndex);
+        return ToTrivia(hidden);
+    }
+
+    /// <summary>
+    /// The single comment on the same line, to the right of <paramref name="stop"/>. Skips a
+    /// trailing field/constant separator (<c>;</c> or <c>,</c>) so <c>0: int32 x; // c</c> works.
+    /// </summary>
+    private Trivia? TrailingTriviaFor(IToken stop)
+    {
+        if (_tokens is null)
+        {
+            return null;
+        }
+
+        for (var i = stop.TokenIndex + 1; i < _tokens.Size; i++)
+        {
+            var token = _tokens.Get(i);
+            if (token.Type == TokenConstants.EOF || token.Line != stop.Line)
+            {
+                break;
+            }
+
+            switch (token.Type)
+            {
+                case BondLexer.COMMENT:
+                case BondLexer.LINE_COMMENT:
+                    return MakeTrivia(token);
+                case BondLexer.SEMI:
+                case BondLexer.COMMA:
+                case BondLexer.WS:
+                    continue;
+                default:
+                    return null;
+            }
+        }
+
+        return null;
+    }
+
+    private static Trivia[] ToTrivia(IList<IToken>? tokens)
+    {
+        if (tokens is null)
+        {
+            return [];
+        }
+
+        var result = new List<Trivia>();
+        foreach (var token in tokens)
+        {
+            if (token.Type is BondLexer.COMMENT or BondLexer.LINE_COMMENT)
+            {
+                result.Add(MakeTrivia(token));
+            }
+        }
+
+        return result.Count == 0 ? [] : result.ToArray();
+    }
+
+    private static Trivia MakeTrivia(IToken token) =>
+        new(
+            token.Type == BondLexer.LINE_COMMENT ? TriviaKind.LineComment : TriviaKind.BlockComment,
+            token.Text.Trim(),
+            new SourceLocation(token.Line, token.Column + 1));
 
     public override Syntax.Bond VisitBond(BondParser.BondContext context)
     {
@@ -111,7 +192,9 @@ public class AstBuilder : BondBaseVisitor<object?>
             Namespaces = _currentNamespaces.ToArray(),
             Name = name,
             TypeParameters = typeParams,
-            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1),
+            LeadingTrivia = LeadingTriviaFor(context.Start),
+            TrailingTrivia = TrailingTriviaFor(context.Stop)
         };
     }
 
@@ -134,7 +217,9 @@ public class AstBuilder : BondBaseVisitor<object?>
             Name = name,
             TypeParameters = typeParams,
             AliasedType = aliasedType,
-            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1),
+            LeadingTrivia = LeadingTriviaFor(context.Start),
+            TrailingTrivia = TrailingTriviaFor(context.Stop)
         };
     }
 
@@ -150,17 +235,19 @@ public class AstBuilder : BondBaseVisitor<object?>
             : [];
 
         var loc = new SourceLocation(context.Start.Line, context.Start.Column + 1);
+        var leading = LeadingTriviaFor(context.Start);
+        var trailing = TrailingTriviaFor(context.Stop);
 
         _currentTypeParams.AddRange(typeParams);
 
         Declaration result;
         if (context.structView() != null)
         {
-            result = VisitStructView(name, typeParams, attributes, loc);
+            result = VisitStructView(name, typeParams, attributes, loc, leading, trailing);
         }
         else if (context.structDef() != null)
         {
-            result = VisitStructDef(context.structDef(), name, typeParams, attributes, loc);
+            result = VisitStructDef(context.structDef(), name, typeParams, attributes, loc, leading, trailing);
         }
         else
         {
@@ -172,7 +259,7 @@ public class AstBuilder : BondBaseVisitor<object?>
         return result;
     }
 
-    private StructDeclaration VisitStructView(string name, TypeParam[] typeParams, Syntax.Attribute[] attributes, SourceLocation loc)
+    private StructDeclaration VisitStructView(string name, TypeParam[] typeParams, Syntax.Attribute[] attributes, SourceLocation loc, Trivia[] leading, Trivia? trailing)
     {
         return new StructDeclaration
         {
@@ -182,11 +269,13 @@ public class AstBuilder : BondBaseVisitor<object?>
             TypeParameters = typeParams,
             BaseType = null,
             Fields = [],
-            Location = loc
+            Location = loc,
+            LeadingTrivia = leading,
+            TrailingTrivia = trailing
         };
     }
 
-    private StructDeclaration VisitStructDef(BondParser.StructDefContext context, string name, TypeParam[] typeParams, Syntax.Attribute[] attributes, SourceLocation loc)
+    private StructDeclaration VisitStructDef(BondParser.StructDefContext context, string name, TypeParam[] typeParams, Syntax.Attribute[] attributes, SourceLocation loc, Trivia[] leading, Trivia? trailing)
     {
         var baseType = context.userType() != null
             ? (BondType)Visit(context.userType())!
@@ -205,7 +294,9 @@ public class AstBuilder : BondBaseVisitor<object?>
             TypeParameters = typeParams,
             BaseType = baseType,
             Fields = fields,
-            Location = loc
+            Location = loc,
+            LeadingTrivia = leading,
+            TrailingTrivia = trailing
         };
     }
 
@@ -227,7 +318,9 @@ public class AstBuilder : BondBaseVisitor<object?>
             Name = name,
             TypeParameters = [],
             Constants = constants,
-            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1),
+            LeadingTrivia = LeadingTriviaFor(context.Start),
+            TrailingTrivia = TrailingTriviaFor(context.Stop)
         };
     }
 
@@ -259,7 +352,12 @@ public class AstBuilder : BondBaseVisitor<object?>
             }
         }
 
-        return new Constant(name, value) { Location = location };
+        return new Constant(name, value)
+        {
+            Location = location,
+            LeadingTrivia = LeadingTriviaFor(context.Start),
+            TrailingTrivia = TrailingTriviaFor(context.Stop)
+        };
     }
 
     public override ServiceDeclaration VisitService(BondParser.ServiceContext context)
@@ -293,7 +391,9 @@ public class AstBuilder : BondBaseVisitor<object?>
             TypeParameters = typeParams,
             BaseType = baseType,
             Methods = methods,
-            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1),
+            LeadingTrivia = LeadingTriviaFor(context.Start),
+            TrailingTrivia = TrailingTriviaFor(context.Stop)
         };
     }
 
@@ -411,7 +511,9 @@ public class AstBuilder : BondBaseVisitor<object?>
 
         return new Field(attributes, ordinal, modifier, type, name, defaultValue)
         {
-            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1)
+            Location = new SourceLocation(context.Start.Line, context.Start.Column + 1),
+            LeadingTrivia = LeadingTriviaFor(context.Start),
+            TrailingTrivia = TrailingTriviaFor(context.Stop)
         };
     }
 

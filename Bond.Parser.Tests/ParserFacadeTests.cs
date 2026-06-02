@@ -56,6 +56,87 @@ public class ParserFacadeTests
         result.Ast!.Declarations.Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task LeadingComments_AreAttachedToDeclarationsAndFields()
+    {
+        var input = """
+            namespace Test
+            // first line
+            // second line
+            struct User {
+                // id doc
+                0: required string id;
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var structDecl = (StructDeclaration)result.Ast!.Declarations[0];
+        structDecl.LeadingTrivia.Select(t => t.Text)
+            .Should().Equal("// first line", "// second line");
+        structDecl.LeadingTrivia.Should().OnlyContain(t => t.Kind == TriviaKind.LineComment);
+
+        structDecl.Fields[0].LeadingTrivia.Select(t => t.Text)
+            .Should().Equal("// id doc");
+    }
+
+    [Fact]
+    public async Task TrailingComments_AreAttachedOnSameLine()
+    {
+        var input = """
+            namespace Test
+            struct User {
+                0: required string id; // trailing field
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var field = ((StructDeclaration)result.Ast!.Declarations[0]).Fields[0];
+        field.TrailingTrivia.Should().NotBeNull();
+        field.TrailingTrivia!.Text.Should().Be("// trailing field");
+    }
+
+    [Fact]
+    public async Task BlockComments_AreCapturedAsBlockTrivia()
+    {
+        var input = """
+            namespace Test
+            /* a block doc */
+            struct User {
+                0: required string id;
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var structDecl = (StructDeclaration)result.Ast!.Declarations[0];
+        structDecl.LeadingTrivia.Should().ContainSingle()
+            .Which.Kind.Should().Be(TriviaKind.BlockComment);
+    }
+
+    [Fact]
+    public async Task NoComments_YieldsEmptyTrivia()
+    {
+        var input = """
+            namespace Test
+            struct User {
+                0: required string id;
+            }
+        """;
+
+        var result = await Parse(input);
+
+        result.Success.Should().BeTrue();
+        var structDecl = (StructDeclaration)result.Ast!.Declarations[0];
+        structDecl.LeadingTrivia.Should().BeEmpty();
+        structDecl.TrailingTrivia.Should().BeNull();
+        structDecl.Fields[0].LeadingTrivia.Should().BeEmpty();
+    }
+
     #endregion
 
     #region String Escapes
