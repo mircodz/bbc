@@ -86,7 +86,7 @@ public static class ParserFacade
                 return new ParseResult(null, errorListener.Errors);
             }
 
-            var astBuilder = new AstBuilder();
+            var astBuilder = new AstBuilder(tokenStream);
             var ast = (Syntax.Bond)astBuilder.Visit(parseTree)!;
 
             if (options?.IgnoreImports == true)
