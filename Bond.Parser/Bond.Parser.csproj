@@ -6,7 +6,9 @@
     <IsPackable>true</IsPackable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Title>Bond IDL Parser</Title>
-    <PackageId>Bond.Parser</PackageId>
+    <PackageId>BondTools.Parser</PackageId>
+    <Authors>Mirco De Zorzi</Authors>
+    <Description>A parser and compatibility checker for the Bond IDL.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <NoWarn>CS1584,CS1658,CS1591</NoWarn>

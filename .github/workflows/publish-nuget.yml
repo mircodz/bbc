@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERSION_FILE: version
-      PROJECT: Bond.Parser.CLI/Bond.Parser.CLI.csproj
       OUT_DIR: artifacts/nupkg
       OWNER: ${{ github.repository_owner }}
     steps:
@@ -41,7 +40,7 @@ jobs:
         run: echo "VERSION=$(cat $VERSION_FILE)" >> "$GITHUB_OUTPUT"
 
       - name: Pack
-        run: dotnet pack $PROJECT -c Release -o $OUT_DIR /p:Version=${{ steps.version.outputs.VERSION }}
+        run: dotnet pack Bond.sln -c Release -o $OUT_DIR /p:Version=${{ steps.version.outputs.VERSION }}
 
       - name: NuGet login
         id: nuget_login
